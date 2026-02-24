@@ -1,5 +1,6 @@
 // ========================================
 // QR GENERATOR PRO - MOBILE WEBSITE
+// iOS File Upload Fixed + Database Search
 // ========================================
 
 // ========== GLOBAL STATE ==========
@@ -11,6 +12,7 @@ const AppState = {
     theme: 'light',
     bulkQRCodes: [],
     currentQR: null,
+    currentScan: null,
     selectedLabelTemplate: 'avery-5160',
     scanner: {
         stream: null,
@@ -112,7 +114,7 @@ function saveState() {
 // ========== EVENT LISTENERS ==========
 function setupEventListeners() {
     // Theme toggle
-    document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+    document.getElementById('theme-toggle')?.addEventListener('click', toggleTheme);
     
     // Tab navigation
     document.querySelectorAll('.tab').forEach(tab => {
@@ -120,9 +122,8 @@ function setupEventListeners() {
     });
     
     // Generate tab
-    document.getElementById('qr-input').addEventListener('input', updateCharCount);
-    document.getElementById('generate-btn').addEventListener('click', generateQR);
-    document.getElementById('db-search')?.addEventListener('input', handleDatabaseSearch);
+    document.getElementById('qr-input')?.addEventListener('input', updateCharCount);
+    document.getElementById('generate-btn')?.addEventListener('click', generateQR);
     
     // QR result actions
     document.getElementById('download-png')?.addEventListener('click', downloadQR);
@@ -149,8 +150,9 @@ function setupEventListeners() {
     document.getElementById('open-url')?.addEventListener('click', openScannedUrl);
     document.getElementById('generate-from-scan')?.addEventListener('click', generateFromScan);
     
-    // Database tab
+    // Database tab - iOS FIXED
     setupDatabaseUpload();
+    document.getElementById('db-search')?.addEventListener('input', handleDatabaseSearch);
     document.getElementById('scan-db-qr')?.addEventListener('click', scanDatabaseQR);
     document.getElementById('load-db-url')?.addEventListener('click', loadDatabaseFromUrl);
     document.getElementById('export-db')?.addEventListener('click', exportDatabase);
@@ -159,17 +161,14 @@ function setupEventListeners() {
 
 // ========== TAB NAVIGATION ==========
 function switchTab(tabName) {
-    // Update tab buttons
     document.querySelectorAll('.tab').forEach(tab => {
         tab.classList.toggle('active', tab.dataset.tab === tabName);
     });
     
-    // Update tab content
     document.querySelectorAll('.tab-content').forEach(content => {
         content.classList.toggle('active', content.id === `${tabName}-tab`);
     });
     
-    // Initialize scanner when switching to scan tab
     if (tabName === 'scan') {
         initScanner();
     } else {
@@ -186,19 +185,22 @@ function toggleTheme() {
 
 function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
-    document.getElementById('theme-toggle').textContent = theme === 'dark' ? '☀️' : '🌙';
+    const btn = document.getElementById('theme-toggle');
+    if (btn) btn.textContent = theme === 'dark' ? '☀️' : '🌙';
 }
 
 // ========== QR GENERATION ==========
 function updateCharCount() {
     const input = document.getElementById('qr-input');
     const count = document.getElementById('char-count');
-    count.textContent = input.value.length;
-    count.style.color = input.value.length > 2953 ? 'var(--danger)' : '';
+    if (input && count) {
+        count.textContent = input.value.length;
+        count.style.color = input.value.length > 2953 ? 'var(--danger)' : '';
+    }
 }
 
 async function generateQR() {
-    const input = document.getElementById('qr-input').value.trim();
+    const input = document.getElementById('qr-input')?.value.trim();
     if (!input) {
         showToast('Please enter text or URL');
         return;
@@ -210,11 +212,11 @@ async function generateQR() {
     }
     
     try {
-        const errorLevel = document.getElementById('error-level').value;
-        const style = document.getElementById('qr-style').value;
-        const fgColor = document.getElementById('fg-color').value;
-        const bgColor = document.getElementById('bg-color').value;
-        const templateId = document.getElementById('template-select').value;
+        const errorLevel = document.getElementById('error-level')?.value || 'M';
+        const style = document.getElementById('qr-style')?.value || 'square';
+        const fgColor = document.getElementById('fg-color')?.value || '#000000';
+        const bgColor = document.getElementById('bg-color')?.value || '#ffffff';
+        const templateId = document.getElementById('template-select')?.value || '';
         
         let qrDataUrl;
         
@@ -284,11 +286,9 @@ function applyQRStyle(sourceCanvas, style, fgColor, bgColor) {
     newCanvas.height = size;
     const newCtx = newCanvas.getContext('2d');
     
-    // Fill background
     newCtx.fillStyle = bgColor;
     newCtx.fillRect(0, 0, size, size);
     
-    // Detect module size
     let transitions = [];
     let lastWasDark = false;
     let transitionStart = 0;
@@ -311,7 +311,6 @@ function applyQRStyle(sourceCanvas, style, fgColor, bgColor) {
     const gridSize = Math.round(size / moduleSize);
     const actualCellSize = size / gridSize;
     
-    // Build matrix
     const matrix = [];
     for (let row = 0; row < gridSize; row++) {
         matrix[row] = [];
@@ -329,7 +328,6 @@ function applyQRStyle(sourceCanvas, style, fgColor, bgColor) {
         }
     }
     
-    // Check if in finder pattern
     function isInFinderPattern(row, col) {
         const finderSize = 7;
         if (row < finderSize && col < finderSize) return true;
@@ -338,7 +336,6 @@ function applyQRStyle(sourceCanvas, style, fgColor, bgColor) {
         return false;
     }
     
-    // Draw styled modules
     newCtx.fillStyle = fgColor;
     
     for (let row = 0; row < gridSize; row++) {
@@ -384,7 +381,6 @@ async function generateTemplatedQR(text, templateId, errorLevel, style) {
     canvas.height = template.canvasHeight;
     const ctx = canvas.getContext('2d');
     
-    // Draw background
     if (template.gradient) {
         const gradient = template.gradient;
         let grd;
@@ -419,7 +415,6 @@ async function generateTemplatedQR(text, templateId, errorLevel, style) {
         ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
     
-    // Draw border
     if (template.borderWidth && template.borderColor) {
         ctx.strokeStyle = template.borderColor;
         ctx.lineWidth = template.borderWidth;
@@ -435,7 +430,6 @@ async function generateTemplatedQR(text, templateId, errorLevel, style) {
         }
     }
     
-    // Generate QR code
     const qrDataUrl = await generateBasicQR(
         text,
         errorLevel,
@@ -444,7 +438,6 @@ async function generateTemplatedQR(text, templateId, errorLevel, style) {
         style
     );
     
-    // Draw QR code
     const qrImg = await loadImage(qrDataUrl);
     const qrX = (template.qrX / 100) * canvas.width;
     const qrY = (template.qrY / 100) * canvas.height;
@@ -452,7 +445,6 @@ async function generateTemplatedQR(text, templateId, errorLevel, style) {
     
     ctx.drawImage(qrImg, qrX - qrSize / 2, qrY - qrSize / 2, qrSize, qrSize);
     
-    // Draw text fields
     if (template.textFields) {
         template.textFields.forEach(field => {
             const x = (field.x / 100) * canvas.width;
@@ -477,7 +469,6 @@ async function generateTemplatedQR(text, templateId, errorLevel, style) {
         });
     }
     
-    // Draw symbols
     if (template.symbols) {
         template.symbols.forEach(symbol => {
             const x = (symbol.x / 100) * canvas.width;
@@ -502,23 +493,26 @@ function displayQRResult(dataUrl, data) {
     const preview = document.getElementById('qr-data-preview');
     const distanceInfo = document.getElementById('scan-distance');
     
-    qrDisplay.innerHTML = `<img src="${dataUrl}" alt="QR Code">`;
-    preview.textContent = data.length > 50 ? data.substring(0, 50) + '...' : data;
+    if (qrDisplay) qrDisplay.innerHTML = `<img src="${dataUrl}" alt="QR Code">`;
+    if (preview) preview.textContent = data.length > 50 ? data.substring(0, 50) + '...' : data;
     
-    // Calculate scan distance
-    const qrSize = 50; // mm
-    const optimal = Math.round(qrSize * 2);
-    const min = Math.round(qrSize * 0.5);
-    const max = Math.round(qrSize * 4);
-    
-    distanceInfo.innerHTML = `
-        <strong>📏 Scan Distance:</strong> ${optimal}cm optimal<br>
-        <small>Min: ${min}cm | Max: ${max}cm (for ${qrSize}mm printed QR)</small>
-    `;
+    if (distanceInfo) {
+        const qrSize = 50;
+        const optimal = Math.round(qrSize * 2);
+        const min = Math.round(qrSize * 0.5);
+        const max = Math.round(qrSize * 4);
+        
+        distanceInfo.innerHTML = `
+            <strong>📏 Scan Distance:</strong> ${optimal}cm optimal<br>
+            <small>Min: ${min}cm | Max: ${max}cm (for ${qrSize}mm printed QR)</small>
+        `;
+    }
     
     AppState.currentQR = { dataUrl, data };
-    resultDiv.classList.remove('hidden');
-    resultDiv.scrollIntoView({ behavior: 'smooth' });
+    if (resultDiv) {
+        resultDiv.classList.remove('hidden');
+        resultDiv.scrollIntoView({ behavior: 'smooth' });
+    }
 }
 
 // ========== QR ACTIONS ==========
@@ -544,7 +538,6 @@ async function copyQR() {
         ]);
         showToast('Copied to clipboard!');
     } catch (error) {
-        // Fallback: copy data text
         try {
             await navigator.clipboard.writeText(AppState.currentQR.data);
             showToast('Copied text to clipboard!');
@@ -564,15 +557,7 @@ function printQR() {
         <head>
             <title>Print QR Code</title>
             <style>
-                body { 
-                    display: flex; 
-                    flex-direction: column;
-                    align-items: center; 
-                    justify-content: center; 
-                    min-height: 100vh; 
-                    margin: 0;
-                    font-family: Arial, sans-serif;
-                }
+                body { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; font-family: Arial, sans-serif; }
                 img { max-width: 80%; height: auto; }
                 p { margin-top: 20px; font-size: 14px; color: #666; word-break: break-all; max-width: 80%; text-align: center; }
             </style>
@@ -620,8 +605,11 @@ function updateHistoryUI() {
     
     container.querySelectorAll('.history-item').forEach(item => {
         item.addEventListener('click', () => {
-            document.getElementById('qr-input').value = item.dataset.value;
-            updateCharCount();
+            const input = document.getElementById('qr-input');
+            if (input) {
+                input.value = item.dataset.value;
+                updateCharCount();
+            }
         });
     });
 }
@@ -666,7 +654,6 @@ function parsePattern(pattern) {
 }
 
 function parseRange(content) {
-    // Number range: 01-20
     if (/^\d+-\d+$/.test(content)) {
         const [start, end] = content.split('-').map(s => s.trim());
         const startNum = parseInt(start);
@@ -680,7 +667,6 @@ function parseRange(content) {
         return values;
     }
     
-    // Letter range: A-Z
     if (/^[A-Za-z]-[A-Za-z]$/.test(content)) {
         const [start, end] = content.split('-');
         const startCode = start.charCodeAt(0);
@@ -693,7 +679,6 @@ function parseRange(content) {
         return values;
     }
     
-    // List: item1|item2|item3
     if (content.includes('|')) {
         return content.split('|').map(s => s.trim());
     }
@@ -717,8 +702,8 @@ function cartesian(arrays) {
 }
 
 function previewBatch() {
-    const pattern = document.getElementById('batch-pattern').value.trim();
-    const manual = document.getElementById('batch-manual').value.trim();
+    const pattern = document.getElementById('batch-pattern')?.value.trim();
+    const manual = document.getElementById('batch-manual')?.value.trim();
     
     let items = [];
     
@@ -736,19 +721,21 @@ function previewBatch() {
     const previewDiv = document.getElementById('batch-preview');
     const previewList = document.getElementById('batch-preview-list');
     
-    let previewText = `Total: ${items.length} items\n\n`;
-    previewText += items.slice(0, 15).join('\n');
-    if (items.length > 15) {
-        previewText += `\n... and ${items.length - 15} more`;
+    if (previewDiv && previewList) {
+        let previewText = `Total: ${items.length} items\n\n`;
+        previewText += items.slice(0, 15).join('\n');
+        if (items.length > 15) {
+            previewText += `\n... and ${items.length - 15} more`;
+        }
+        
+        previewList.textContent = previewText;
+        previewDiv.classList.remove('hidden');
     }
-    
-    previewList.textContent = previewText;
-    previewDiv.classList.remove('hidden');
 }
 
 async function generateBatch() {
-    const pattern = document.getElementById('batch-pattern').value.trim();
-    const manual = document.getElementById('batch-manual').value.trim();
+    const pattern = document.getElementById('batch-pattern')?.value.trim();
+    const manual = document.getElementById('batch-manual')?.value.trim();
     
     let items = [];
     
@@ -767,9 +754,9 @@ async function generateBatch() {
         return;
     }
     
-    const errorLevel = document.getElementById('error-level').value;
-    const style = document.getElementById('qr-style').value;
-    const templateId = document.getElementById('batch-template').value;
+    const errorLevel = document.getElementById('error-level')?.value || 'M';
+    const style = document.getElementById('qr-style')?.value || 'square';
+    const templateId = document.getElementById('batch-template')?.value || '';
     
     const progressDiv = document.getElementById('batch-progress');
     const progressFill = document.getElementById('progress-fill');
@@ -777,17 +764,17 @@ async function generateBatch() {
     const resultsDiv = document.getElementById('batch-results');
     const grid = document.getElementById('batch-grid');
     
-    progressDiv.classList.remove('hidden');
-    resultsDiv.classList.add('hidden');
-    grid.innerHTML = '';
+    if (progressDiv) progressDiv.classList.remove('hidden');
+    if (resultsDiv) resultsDiv.classList.add('hidden');
+    if (grid) grid.innerHTML = '';
     AppState.bulkQRCodes = [];
     
     for (let i = 0; i < items.length; i++) {
         const item = items[i];
         const percent = ((i + 1) / items.length) * 100;
         
-        progressFill.style.width = percent + '%';
-        progressText.textContent = `Generating ${i + 1} of ${items.length}...`;
+        if (progressFill) progressFill.style.width = percent + '%';
+        if (progressText) progressText.textContent = `Generating ${i + 1} of ${items.length}...`;
         
         try {
             let qrUrl;
@@ -795,36 +782,37 @@ async function generateBatch() {
             if (templateId && QR_TEMPLATES[templateId]) {
                 qrUrl = await generateTemplatedQR(item, templateId, errorLevel, style);
             } else {
-                const fgColor = document.getElementById('fg-color').value;
-                const bgColor = document.getElementById('bg-color').value;
+                const fgColor = document.getElementById('fg-color')?.value || '#000000';
+                const bgColor = document.getElementById('bg-color')?.value || '#ffffff';
                 qrUrl = await generateBasicQR(item, errorLevel, fgColor, bgColor, style);
             }
             
             AppState.bulkQRCodes.push({ data: item, url: qrUrl });
             
-            const itemEl = document.createElement('div');
-            itemEl.className = 'batch-item';
-            itemEl.innerHTML = `
-                <img src="${qrUrl}" alt="${escapeHtml(item)}">
-                <div class="batch-item-label">${item.length > 15 ? item.substring(0, 15) + '...' : item}</div>
-            `;
-            grid.appendChild(itemEl);
+            if (grid) {
+                const itemEl = document.createElement('div');
+                itemEl.className = 'batch-item';
+                itemEl.innerHTML = `
+                    <img src="${qrUrl}" alt="${escapeHtml(item)}">
+                    <div class="batch-item-label">${item.length > 15 ? item.substring(0, 15) + '...' : item}</div>
+                `;
+                grid.appendChild(itemEl);
+            }
             
         } catch (error) {
             console.error(`Error generating QR for "${item}":`, error);
         }
         
-        // Yield to UI
         if (i % 5 === 0) {
             await sleep(0);
         }
     }
     
-    progressText.textContent = `✓ Generated ${items.length} QR codes!`;
+    if (progressText) progressText.textContent = `✓ Generated ${items.length} QR codes!`;
     
     setTimeout(() => {
-        progressDiv.classList.add('hidden');
-        resultsDiv.classList.remove('hidden');
+        if (progressDiv) progressDiv.classList.add('hidden');
+        if (resultsDiv) resultsDiv.classList.remove('hidden');
     }, 1000);
 }
 
@@ -836,7 +824,7 @@ function selectLabelTemplate(templateId) {
         btn.classList.toggle('active', btn.dataset.template === templateId);
     });
     
-    showToast(`Selected: ${LABEL_TEMPLATES[templateId].name}`);
+    showToast(`Selected: ${LABEL_TEMPLATES[templateId]?.name || templateId}`);
 }
 
 function downloadAllBatch() {
@@ -865,7 +853,6 @@ async function downloadBatchPDF() {
     const rows = 5;
     const gap = 10;
     const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
     const totalWidth = cols * qrSize + (cols - 1) * gap;
     const marginX = (pageWidth - totalWidth) / 2;
     const marginY = 20;
@@ -945,11 +932,12 @@ async function initScanner() {
         const videoDevices = devices.filter(d => d.kind === 'videoinput');
         
         const selector = document.getElementById('camera-select');
-        selector.innerHTML = videoDevices.map((device, index) =>
-            `<option value="${device.deviceId}">${device.label || `Camera ${index + 1}`}</option>`
-        ).join('');
+        if (selector) {
+            selector.innerHTML = videoDevices.map((device, index) =>
+                `<option value="${device.deviceId}">${device.label || `Camera ${index + 1}`}</option>`
+            ).join('');
+        }
         
-        // Prefer back camera on mobile
         const backCamera = videoDevices.find(d => d.label.toLowerCase().includes('back'));
         const deviceId = backCamera ? backCamera.deviceId : (videoDevices[0]?.deviceId || null);
         
@@ -980,7 +968,9 @@ async function startCamera(deviceId) {
         AppState.scanner.stream = await navigator.mediaDevices.getUserMedia(constraints);
         
         const video = document.getElementById('scanner-video');
-        video.srcObject = AppState.scanner.stream;
+        if (video) {
+            video.srcObject = AppState.scanner.stream;
+        }
         
         AppState.scanner.scanning = true;
         startScanning();
@@ -997,6 +987,8 @@ function switchCamera(event) {
 
 function startScanning() {
     const video = document.getElementById('scanner-video');
+    if (!video) return;
+    
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     
@@ -1042,7 +1034,6 @@ function handleScanResult(data) {
     displayScanResult(data);
     addToScanHistory(data);
     
-    // Visual feedback
     const overlay = document.querySelector('.scanner-overlay');
     if (overlay) {
         overlay.style.background = 'rgba(16, 185, 129, 0.3)';
@@ -1051,7 +1042,6 @@ function handleScanResult(data) {
         }, 200);
     }
     
-    // Vibrate on mobile
     if (navigator.vibrate) {
         navigator.vibrate(100);
     }
@@ -1061,15 +1051,17 @@ function displayScanResult(data) {
     const resultDiv = document.getElementById('scan-result');
     const scanData = document.getElementById('scan-data');
     
-    scanData.textContent = data;
-    resultDiv.classList.remove('hidden');
-    resultDiv.scrollIntoView({ behavior: 'smooth' });
+    if (scanData) scanData.textContent = data;
+    if (resultDiv) {
+        resultDiv.classList.remove('hidden');
+        resultDiv.scrollIntoView({ behavior: 'smooth' });
+    }
     
     AppState.currentScan = data;
 }
 
 async function scanFromImage(event) {
-    const file = event.target.files[0];
+    const file = event.target.files?.[0];
     if (!file) return;
     
     try {
@@ -1167,27 +1159,57 @@ function openScannedUrl() {
 function generateFromScan() {
     if (!AppState.currentScan) return;
     
-    document.getElementById('qr-input').value = AppState.currentScan;
-    updateCharCount();
+    const input = document.getElementById('qr-input');
+    if (input) {
+        input.value = AppState.currentScan;
+        updateCharCount();
+    }
     switchTab('generate');
 }
 
-// ========== DATABASE ==========
+// ========================================
+// DATABASE - iOS FILE UPLOAD FIXED
+// ========================================
+
 function setupDatabaseUpload() {
     const dropZone = document.getElementById('db-drop-zone');
     const fileInput = document.getElementById('db-upload');
+    const browseBtn = dropZone?.querySelector('.btn');
     
-    // Click to upload
-    dropZone.addEventListener('click', () => fileInput.click());
+    if (!dropZone || !fileInput) {
+        console.error('Database upload elements not found');
+        return;
+    }
     
-    // File selected
-    fileInput.addEventListener('change', (e) => {
-        if (e.target.files[0]) {
-            handleDatabaseFile(e.target.files[0]);
-        }
-    });
+    // iOS FIX: Create a visible, properly sized file input
+    fileInput.style.cssText = `
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        opacity: 0;
+        cursor: pointer;
+        z-index: 10;
+    `;
     
-    // Drag and drop
+    // Make drop zone position relative for absolute positioning of input
+    dropZone.style.position = 'relative';
+    
+    // iOS FIX: Multiple event listeners for maximum compatibility
+    fileInput.addEventListener('change', handleFileSelect);
+    fileInput.addEventListener('input', handleFileSelect);
+    
+    // iOS FIX: Also handle click on the browse button specifically
+    if (browseBtn) {
+        browseBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            fileInput.click();
+        });
+    }
+    
+    // Drag and drop (won't work on iOS but good for desktop)
     dropZone.addEventListener('dragover', (e) => {
         e.preventDefault();
         dropZone.classList.add('dragover');
@@ -1201,32 +1223,55 @@ function setupDatabaseUpload() {
         e.preventDefault();
         dropZone.classList.remove('dragover');
         
-        if (e.dataTransfer.files[0]) {
+        if (e.dataTransfer?.files?.[0]) {
             handleDatabaseFile(e.dataTransfer.files[0]);
         }
     });
+    
+    console.log('Database upload setup complete');
+}
+
+function handleFileSelect(e) {
+    console.log('File select triggered', e.type);
+    const file = e.target?.files?.[0];
+    
+    if (file) {
+        console.log('File selected:', file.name, file.size);
+        handleDatabaseFile(file);
+        // Reset input so same file can be selected again
+        e.target.value = '';
+    }
 }
 
 async function handleDatabaseFile(file) {
     const statusDiv = document.getElementById('upload-status');
-    statusDiv.className = 'status';
-    statusDiv.textContent = 'Reading file...';
-    statusDiv.classList.remove('hidden');
+    
+    if (statusDiv) {
+        statusDiv.className = 'status';
+        statusDiv.textContent = '📖 Reading file...';
+        statusDiv.classList.remove('hidden');
+    }
     
     try {
         const content = await readFile(file);
         const fileName = file.name.replace(/\.[^/.]+$/, '');
         const result = await parseDatabase(content, fileName);
         
-        statusDiv.className = 'status success';
-        statusDiv.textContent = `✓ Loaded ${result.rows} records from ${fileName}`;
+        if (statusDiv) {
+            statusDiv.className = 'status success';
+            statusDiv.textContent = `✓ Loaded ${result.rows} records from ${fileName}`;
+        }
         
         showToast(`Database loaded: ${result.rows} records`);
         updateDatabaseUI();
         
     } catch (error) {
-        statusDiv.className = 'status error';
-        statusDiv.textContent = `Error: ${error.message}`;
+        console.error('Database file error:', error);
+        if (statusDiv) {
+            statusDiv.className = 'status error';
+            statusDiv.textContent = `❌ Error: ${error.message}`;
+        }
+        showToast('Error loading database');
     }
 }
 
@@ -1283,7 +1328,7 @@ async function parseDatabase(content, fileName) {
 
 async function loadDatabaseFromUrl() {
     const urlInput = document.getElementById('db-url');
-    const url = urlInput.value.trim();
+    const url = urlInput?.value.trim();
     
     if (!url) {
         showToast('Please enter a URL');
@@ -1291,9 +1336,11 @@ async function loadDatabaseFromUrl() {
     }
     
     const statusDiv = document.getElementById('upload-status');
-    statusDiv.className = 'status';
-    statusDiv.textContent = 'Loading from URL...';
-    statusDiv.classList.remove('hidden');
+    if (statusDiv) {
+        statusDiv.className = 'status';
+        statusDiv.textContent = '🌐 Loading from URL...';
+        statusDiv.classList.remove('hidden');
+    }
     
     try {
         const response = await fetch(url);
@@ -1303,94 +1350,139 @@ async function loadDatabaseFromUrl() {
         }
         
         const contentType = response.headers.get('content-type');
-        let data;
         
         if (contentType && contentType.includes('application/json')) {
-            data = await response.json();
+            const data = await response.json();
+            
+            if (Array.isArray(data)) {
+                const dbId = Date.now().toString(36) + Math.random().toString(36).substr(2);
+                const fileName = url.split('/').pop().replace(/\.[^/.]+$/, '') || 'imported';
+                
+                AppState.databases[dbId] = {
+                    name: fileName,
+                    data: data.map(item => ({
+                        label: item.label || item.name || item.title || '',
+                        id: item.id || item.code || '',
+                        displayText: item.displayText || item.description || ''
+                    })),
+                    created: Date.now(),
+                    rows: data.length
+                };
+                
+                AppState.activeDbId = dbId;
+                saveState();
+                
+                if (statusDiv) {
+                    statusDiv.className = 'status success';
+                    statusDiv.textContent = `✓ Loaded ${data.length} records`;
+                }
+                updateDatabaseUI();
+            } else {
+                throw new Error('Invalid JSON format - expected array');
+            }
         } else {
-            const text = await response.text();
             // Try to parse as CSV/TSV
+            const text = await response.text();
             const fileName = url.split('/').pop().replace(/\.[^/.]+$/, '') || 'imported';
             const result = await parseDatabase(text, fileName);
             
-            statusDiv.className = 'status success';
-            statusDiv.textContent = `✓ Loaded ${result.rows} records`;
+            if (statusDiv) {
+                statusDiv.className = 'status success';
+                statusDiv.textContent = `✓ Loaded ${result.rows} records`;
+            }
             updateDatabaseUI();
-            return;
-        }
-        
-        // Handle JSON database
-        if (Array.isArray(data)) {
-            const dbId = Date.now().toString(36) + Math.random().toString(36).substr(2);
-            const fileName = url.split('/').pop().replace(/\.[^/.]+$/, '') || 'imported';
-            
-            AppState.databases[dbId] = {
-                name: fileName,
-                data: data.map(item => ({
-                    label: item.label || item.name || item.title || '',
-                    id: item.id || item.code || '',
-                    displayText: item.displayText || item.description || ''
-                })),
-                created: Date.now(),
-                rows: data.length
-            };
-            
-            AppState.activeDbId = dbId;
-            saveState();
-            
-            statusDiv.className = 'status success';
-            statusDiv.textContent = `✓ Loaded ${data.length} records`;
-            updateDatabaseUI();
-        } else {
-            throw new Error('Invalid JSON format');
         }
         
     } catch (error) {
-        statusDiv.className = 'status error';
-        statusDiv.textContent = `Error: ${error.message}`;
+        console.error('URL load error:', error);
+        if (statusDiv) {
+            statusDiv.className = 'status error';
+            statusDiv.textContent = `❌ Error: ${error.message}`;
+        }
     }
 }
 
 function scanDatabaseQR() {
-    // Switch to scan tab and set flag
-    AppState.scanningForDatabase = true;
+    showToast('Switch to Scan tab and scan a QR with database URL');
     switchTab('scan');
-    showToast('Scan a QR code containing a database URL');
 }
+
+// ========================================
+// DATABASE SEARCH - MAIN FEATURE
+// ========================================
 
 function handleDatabaseSearch(event) {
     const query = event.target.value.toLowerCase().trim();
     const resultsDiv = document.getElementById('search-results');
     
+    if (!resultsDiv) return;
+    
+    // Hide results if no query or no active database
     if (!query || !AppState.activeDbId) {
         resultsDiv.classList.remove('visible');
+        resultsDiv.innerHTML = '';
         return;
     }
     
     const db = AppState.databases[AppState.activeDbId];
-    if (!db) return;
+    if (!db || !db.data) {
+        resultsDiv.classList.remove('visible');
+        return;
+    }
     
+    // Search through database
     const matches = db.data.filter(item =>
         item.label.toLowerCase().includes(query) ||
         item.id.toLowerCase().includes(query) ||
         (item.displayText && item.displayText.toLowerCase().includes(query))
-    ).slice(0, 10);
+    ).slice(0, 15); // Limit results
     
     if (matches.length > 0) {
         resultsDiv.innerHTML = matches.map(item => `
-            <div class="search-item" data-id="${escapeHtml(item.id)}" data-label="${escapeHtml(item.label)}">
-                <div class="search-item-label">${item.label}</div>
-                <div class="search-item-id">ID: ${item.id}</div>
+            <div class="search-item" data-id="${escapeHtml(item.id)}" data-label="${escapeHtml(item.label)}" data-display="${escapeHtml(item.displayText || '')}">
+                <div class="search-item-label">${escapeHtml(item.label)}</div>
+                <div class="search-item-id">ID: ${escapeHtml(item.id)}${item.displayText ? ' • ' + escapeHtml(item.displayText) : ''}</div>
             </div>
         `).join('');
         
         resultsDiv.classList.add('visible');
         
+        // Add click handlers to search results
         resultsDiv.querySelectorAll('.search-item').forEach(item => {
-            item.addEventListener('click', () => {
-                document.getElementById('qr-input').value = item.dataset.id;
-                updateCharCount();
-                resultsDiv.classList.remove('visible');
+            item.addEventListener('click', async () => {
+                const id = item.dataset.id;
+                const label = item.dataset.label;
+                
+                console.log('Selected from database:', { id, label });
+                
+                // Generate QR code for this item
+                try {
+                    const errorLevel = document.getElementById('error-level')?.value || 'M';
+                    const style = document.getElementById('qr-style')?.value || 'square';
+                    const fgColor = document.getElementById('fg-color')?.value || '#000000';
+                    const bgColor = document.getElementById('bg-color')?.value || '#ffffff';
+                    const templateId = document.getElementById('template-select')?.value || '';
+                    
+                    let qrDataUrl;
+                    
+                    if (templateId && QR_TEMPLATES[templateId]) {
+                        qrDataUrl = await generateTemplatedQR(id, templateId, errorLevel, style);
+                    } else {
+                        qrDataUrl = await generateBasicQR(id, errorLevel, fgColor, bgColor, style);
+                    }
+                    
+                    displayQRResult(qrDataUrl, id);
+                    addToHistory(id);
+                    
+                    // Clear search
+                    const searchInput = document.getElementById('db-search');
+                    if (searchInput) searchInput.value = '';
+                    resultsDiv.classList.remove('visible');
+                    
+                } catch (error) {
+                    console.error('Error generating QR from database:', error);
+                    showToast('Error generating QR code');
+                }
             });
         });
     } else {
@@ -1404,70 +1496,74 @@ function updateDatabaseUI() {
     const activeCard = document.getElementById('active-db-card');
     const searchContainer = document.getElementById('db-search-container');
     
-    // Update database list
     const dbKeys = Object.keys(AppState.databases);
     
-    if (dbKeys.length === 0) {
-        dbList.innerHTML = '<p class="text-muted">No databases loaded</p>';
-        activeCard.classList.add('hidden');
-        searchContainer?.classList.add('hidden');
-        return;
+    // Update database list
+    if (dbList) {
+        if (dbKeys.length === 0) {
+            dbList.innerHTML = '<p class="text-muted">No databases loaded</p>';
+        } else {
+            dbList.innerHTML = dbKeys.map(id => {
+                const db = AppState.databases[id];
+                const isActive = id === AppState.activeDbId;
+                
+                return `
+                    <div class="db-item ${isActive ? 'active' : ''}" data-id="${id}">
+                        <div class="db-item-info">
+                            <div class="db-item-name">${escapeHtml(db.name)}</div>
+                            <div class="db-item-meta">${db.rows} rows • ${new Date(db.created).toLocaleDateString()}</div>
+                        </div>
+                        <div class="db-item-actions">
+                            ${!isActive ? `<button class="btn btn-small btn-secondary activate-db" data-id="${id}">Use</button>` : '<span style="color: var(--success);">✓ Active</span>'}
+                            <button class="btn btn-small btn-danger delete-db" data-id="${id}">×</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            // Attach event handlers
+            dbList.querySelectorAll('.activate-db').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    AppState.activeDbId = btn.dataset.id;
+                    saveState();
+                    updateDatabaseUI();
+                    showToast('Database activated');
+                });
+            });
+            
+            dbList.querySelectorAll('.delete-db').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (confirm('Delete this database?')) {
+                        delete AppState.databases[btn.dataset.id];
+                        if (AppState.activeDbId === btn.dataset.id) {
+                            AppState.activeDbId = Object.keys(AppState.databases)[0] || null;
+                        }
+                        saveState();
+                        updateDatabaseUI();
+                        showToast('Database deleted');
+                    }
+                });
+            });
+        }
     }
     
-    dbList.innerHTML = dbKeys.map(id => {
-        const db = AppState.databases[id];
-        const isActive = id === AppState.activeDbId;
-        
-        return `
-            <div class="db-item ${isActive ? 'active' : ''}" data-id="${id}">
-                <div class="db-item-info">
-                    <div class="db-item-name">${db.name}</div>
-                    <div class="db-item-meta">${db.rows} rows • ${new Date(db.created).toLocaleDateString()}</div>
-                </div>
-                <div class="db-item-actions">
-                    ${!isActive ? `<button class="btn btn-small btn-secondary activate-db" data-id="${id}">Use</button>` : ''}
-                    <button class="btn btn-small btn-danger delete-db" data-id="${id}">×</button>
-                </div>
-            </div>
-        `;
-    }).join('');
-    
-    // Attach events
-    dbList.querySelectorAll('.activate-db').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            AppState.activeDbId = btn.dataset.id;
-            saveState();
-            updateDatabaseUI();
-            showToast('Database activated');
-        });
-    });
-    
-    dbList.querySelectorAll('.delete-db').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (confirm('Delete this database?')) {
-                delete AppState.databases[btn.dataset.id];
-                if (AppState.activeDbId === btn.dataset.id) {
-                    AppState.activeDbId = Object.keys(AppState.databases)[0] || null;
-                }
-                saveState();
-                updateDatabaseUI();
-                showToast('Database deleted');
-            }
-        });
-    });
-    
-    // Update active database card
+    // Update active database info
     if (AppState.activeDbId && AppState.databases[AppState.activeDbId]) {
         const activeDb = AppState.databases[AppState.activeDbId];
-        document.getElementById('active-db-name').textContent = activeDb.name;
-        document.getElementById('active-db-info').textContent = `${activeDb.rows} records • Created ${new Date(activeDb.created).toLocaleDateString()}`;
-        activeCard.classList.remove('hidden');
-        searchContainer?.classList.remove('hidden');
+        
+        const nameEl = document.getElementById('active-db-name');
+        const infoEl = document.getElementById('active-db-info');
+        
+        if (nameEl) nameEl.textContent = activeDb.name;
+        if (infoEl) infoEl.textContent = `${activeDb.rows} records • Created ${new Date(activeDb.created).toLocaleDateString()}`;
+        
+        if (activeCard) activeCard.classList.remove('hidden');
+        if (searchContainer) searchContainer.classList.remove('hidden');
     } else {
-        activeCard.classList.add('hidden');
-        searchContainer?.classList.add('hidden');
+        if (activeCard) activeCard.classList.add('hidden');
+        if (searchContainer) searchContainer.classList.add('hidden');
     }
 }
 
@@ -1491,22 +1587,7 @@ function exportDatabase() {
 async function generateDatabaseQR() {
     if (!AppState.activeDbId) return;
     
-    // For sharing, you'd upload the JSON somewhere and generate a QR with the URL
-    // For now, we'll create a data URL (limited to small databases)
-    
-    const db = AppState.databases[AppState.activeDbId];
-    
-    if (db.data.length > 50) {
-        showToast('Database too large for QR. Export as JSON and host it online.');
-        return;
-    }
-    
-    const json = JSON.stringify(db.data);
-    const encoded = encodeURIComponent(json);
-    
-    // Create a simple HTML page that loads the data
-    // In production, you'd want to host the JSON and generate a URL QR
-    showToast('For large databases, host your JSON file online and share that URL as a QR code');
+    showToast('Host your JSON file online and share that URL as a QR code');
 }
 
 // ========== UI UPDATE ==========
@@ -1515,7 +1596,6 @@ function updateUI() {
     updateScanHistoryUI();
     updateDatabaseUI();
     
-    // Update label template selection
     document.querySelectorAll('.label-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.template === AppState.selectedLabelTemplate);
     });
@@ -1546,6 +1626,7 @@ function roundRect(ctx, x, y, width, height, radius) {
 }
 
 function escapeHtml(text) {
+    if (!text) return '';
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
@@ -1557,15 +1638,20 @@ function sleep(ms) {
 
 function showToast(message, duration = 3000) {
     const toast = document.getElementById('toast');
-    toast.textContent = message;
-    toast.classList.remove('hidden');
-    
-    setTimeout(() => {
-        toast.classList.add('hidden');
-    }, duration);
+    if (toast) {
+        toast.textContent = message;
+        toast.classList.remove('hidden');
+        
+        setTimeout(() => {
+            toast.classList.add('hidden');
+        }, duration);
+    }
 }
 
 // ========== CLEANUP ==========
 window.addEventListener('beforeunload', () => {
     stopScanner();
 });
+
+// Log ready status
+console.log('QR Generator Pro script loaded');
