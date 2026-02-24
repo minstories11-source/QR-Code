@@ -1,6 +1,6 @@
 // ========================================
 // QR GENERATOR PRO - WITH CHAIN TRANSFER
-// Share databases between phones via QR chain
+// + Add Entry & Merge Databases
 // ========================================
 
 const AppState = {
@@ -151,6 +151,11 @@ function setupEventListeners() {
     document.getElementById('db-print-qr')?.addEventListener('click', () => printQR('db'));
     document.getElementById('go-to-settings')?.addEventListener('click', () => switchTab('settings'));
     
+    // Database - Add Entry
+    document.getElementById('show-add-entry')?.addEventListener('click', showAddEntryForm);
+    document.getElementById('cancel-add-entry')?.addEventListener('click', hideAddEntryForm);
+    document.getElementById('save-entry')?.addEventListener('click', saveNewEntry);
+    
     // Scan tab
     document.getElementById('camera-select')?.addEventListener('change', switchCamera);
     document.getElementById('scan-upload')?.addEventListener('change', scanFromImage);
@@ -174,11 +179,15 @@ function setupEventListeners() {
     document.getElementById('chain-next')?.addEventListener('click', chainNext);
     document.getElementById('chain-pause')?.addEventListener('click', toggleChainPause);
     document.getElementById('cancel-chain-receive')?.addEventListener('click', cancelChainReceive);
+    
+    // Merge databases
+    document.getElementById('show-merge-modal')?.addEventListener('click', showMergeModal);
+    document.getElementById('cancel-merge')?.addEventListener('click', hideMergeModal);
+    document.getElementById('confirm-merge')?.addEventListener('click', performMerge);
 }
 
 // ========== TABS ==========
 function switchTab(tabName) {
-    // Stop chain transfer if leaving settings
     if (tabName !== 'settings' && AppState.chain.sending) {
         stopChainTransfer();
     }
@@ -366,15 +375,19 @@ function updateDatabaseTab() {
     
     const noDbMsg = document.getElementById('no-db-message');
     const searchSection = document.getElementById('db-search-section');
+    const addEntryBtn = document.getElementById('show-add-entry');
     
     if (noDbMsg) noDbMsg.style.display = hasDb ? 'none' : 'block';
     if (searchSection) searchSection.classList.toggle('hidden', !hasDb);
+    if (addEntryBtn) addEntryBtn.style.display = hasDb ? 'block' : 'none';
     
     if (hasDb) {
         const db = AppState.databases[AppState.activeDbId];
         const info = document.getElementById('db-info-text');
         if (info) info.textContent = `${db.name} • ${db.rows} items`;
     }
+    
+    hideAddEntryForm();
 }
 
 function handleDatabaseSearch(e) {
@@ -448,6 +461,75 @@ async function selectDatabaseItem(id, label) {
         console.error(e);
         showToast('Error generating QR');
     }
+}
+
+// ========== ADD ENTRY ==========
+function showAddEntryForm() {
+    if (!AppState.activeDbId) return;
+    
+    const form = document.getElementById('add-entry-form');
+    const fields = document.getElementById('entry-fields');
+    
+    if (!form || !fields) return;
+    
+    // Build form fields based on database columns
+    fields.innerHTML = `
+        <div class="form-group">
+            <label for="entry-label">Label *</label>
+            <input type="text" id="entry-label" placeholder="Display name" required>
+        </div>
+        <div class="form-group">
+            <label for="entry-id">ID *</label>
+            <input type="text" id="entry-id" placeholder="Unique identifier / QR content" required>
+        </div>
+        <div class="form-group">
+            <label for="entry-desc">Description</label>
+            <input type="text" id="entry-desc" placeholder="Optional description">
+        </div>
+    `;
+    
+    form.classList.remove('hidden');
+    document.getElementById('entry-label')?.focus();
+}
+
+function hideAddEntryForm() {
+    const form = document.getElementById('add-entry-form');
+    if (form) form.classList.add('hidden');
+}
+
+function saveNewEntry() {
+    if (!AppState.activeDbId) return;
+    
+    const label = document.getElementById('entry-label')?.value.trim();
+    const id = document.getElementById('entry-id')?.value.trim();
+    const desc = document.getElementById('entry-desc')?.value.trim() || '';
+    
+    if (!label || !id) {
+        showToast('Label and ID are required');
+        return;
+    }
+    
+    const db = AppState.databases[AppState.activeDbId];
+    
+    // Check for duplicate ID
+    if (db.data.some(item => item.id === id)) {
+        showToast('An entry with this ID already exists');
+        return;
+    }
+    
+    // Add new entry
+    db.data.push({
+        label: label,
+        id: id,
+        displayText: desc
+    });
+    
+    db.rows = db.data.length;
+    saveState();
+    
+    hideAddEntryForm();
+    updateDatabaseTab();
+    showToast(`Added "${label}"`);
 }
 
 // ========== SCANNER ==========
@@ -584,7 +666,6 @@ function startScanLoop() {
     }
     scan();
 }
-
 
 function stopScanner() {
     AppState.scanner.scanning = false;
@@ -730,7 +811,6 @@ async function startChainTransfer() {
     const chainUI = document.getElementById('chain-transfer-ui');
     const startBtn = document.getElementById('start-chain-transfer');
     
-    // Prepare data with short keys to save space
     const exportData = {
         n: db.name,
         d: db.data.map(item => ({
@@ -743,13 +823,11 @@ async function startChainTransfer() {
     const jsonStr = JSON.stringify(exportData);
     const chainId = generateId().substring(0, 6);
     
-    // Split into chunks
     const chunks = [];
     for (let i = 0; i < jsonStr.length; i += CHUNK_SIZE) {
         chunks.push(jsonStr.substring(i, i + CHUNK_SIZE));
     }
     
-    // Generate QR codes for each chunk
     AppState.chain.qrCodes = [];
     AppState.chain.totalParts = chunks.length;
     AppState.chain.currentPart = 0;
@@ -759,18 +837,15 @@ async function startChainTransfer() {
     
     try {
         for (let i = 0; i < chunks.length; i++) {
-            // Format: QRP:1:chainId:partNum:totalParts:data
             const qrData = `${CHAIN_PREFIX}${chainId}:${i + 1}:${chunks.length}:${chunks[i]}`;
             const qrDataUrl = await generateBasicQR(qrData, 'L', '#000000', '#ffffff');
             AppState.chain.qrCodes.push(qrDataUrl);
         }
         
-        // Show UI
         AppState.chain.sending = true;
         if (startBtn) startBtn.style.display = 'none';
         if (chainUI) chainUI.classList.remove('hidden');
         
-        // Reset pause button
         const pauseBtn = document.getElementById('chain-pause');
         if (pauseBtn) pauseBtn.textContent = '⏸️ Pause';
         
@@ -835,7 +910,6 @@ function startChainAutoPlay() {
         AppState.chain.intervalId = null;
     }
     
-    // Don't start if paused
     if (AppState.chain.paused) return;
     
     AppState.chain.intervalId = setInterval(() => {
@@ -850,13 +924,11 @@ function toggleChainPause() {
     const btn = document.getElementById('chain-pause');
     
     if (AppState.chain.paused) {
-        // Resume
         AppState.chain.paused = false;
         if (btn) btn.textContent = '⏸️ Pause';
         startChainAutoPlay();
         showToast('Auto-cycle resumed');
     } else {
-        // Pause
         AppState.chain.paused = true;
         if (btn) btn.textContent = '▶️ Play';
         if (AppState.chain.intervalId) {
@@ -874,7 +946,6 @@ function updateChainSpeed(e) {
     const label = document.getElementById('chain-speed-label');
     if (label) label.textContent = `${(speed / 1000).toFixed(1)}s`;
     
-    // Restart autoplay with new speed if not paused
     if (AppState.chain.sending && !AppState.chain.paused) {
         startChainAutoPlay();
     }
@@ -895,7 +966,6 @@ function chainNext() {
 // ========== CHAIN RECEIVING ==========
 
 function handleChainQR(data) {
-    // Parse: QRP:1:chainId:partNum:totalParts:payload
     const parts = data.substring(CHAIN_PREFIX.length).split(':');
     
     if (parts.length < 4) {
@@ -913,9 +983,7 @@ function handleChainQR(data) {
         return;
     }
     
-    // Initialize or validate receiving state
     if (!AppState.chain.receiving || AppState.chain.receiving.chainId !== chainId) {
-        // New chain transfer
         AppState.chain.receiving = {
             chainId: chainId,
             total: totalParts,
@@ -925,16 +993,12 @@ function handleChainQR(data) {
         showChainReceiveUI();
     }
     
-    // Check if we already have this part
     if (AppState.chain.receiving.parts[partNum]) {
-        updateChainReceiveProgress();
         return;
     }
     
-    // Store the part
     AppState.chain.receiving.parts[partNum] = payload;
     
-    // Visual feedback
     const overlay = document.querySelector('.scanner-overlay');
     if (overlay) {
         overlay.style.background = 'rgba(59, 130, 246, 0.5)';
@@ -944,7 +1008,6 @@ function handleChainQR(data) {
     
     updateChainReceiveProgress();
     
-    // Check if complete
     const received = Object.keys(AppState.chain.receiving.parts).length;
     if (received === totalParts) {
         completeChainReceive();
@@ -997,7 +1060,6 @@ async function completeChainReceive() {
     if (!state) return;
     
     try {
-        // Reassemble JSON
         let jsonStr = '';
         for (let i = 1; i <= state.total; i++) {
             jsonStr += state.parts[i];
@@ -1005,7 +1067,6 @@ async function completeChainReceive() {
         
         const importData = JSON.parse(jsonStr);
         
-        // Convert back to full format
         const dbData = importData.d.map(item => ({
             label: item.l,
             id: item.i,
@@ -1025,11 +1086,9 @@ async function completeChainReceive() {
         AppState.activeDbId = dbId;
         saveState();
         
-        // Success!
         const duration = ((Date.now() - state.startTime) / 1000).toFixed(1);
         showToast(`✓ Imported "${dbName}" (${dbData.length} items) in ${duration}s`);
         
-        // Reset UI
         hideChainReceiveUI();
         updateSettingsUI();
         updateDatabaseTab();
@@ -1051,6 +1110,86 @@ function hideChainReceiveUI() {
     
     const ui = document.getElementById('chain-receive-ui');
     if (ui) ui.classList.add('hidden');
+}
+
+// ========================================
+// MERGE DATABASES
+// ========================================
+
+function showMergeModal() {
+    const modal = document.getElementById('merge-modal');
+    const select = document.getElementById('merge-source');
+    
+    if (!modal || !select) return;
+    
+    const keys = Object.keys(AppState.databases);
+    
+    if (keys.length < 2) {
+        showToast('Need at least 2 databases to merge');
+        return;
+    }
+    
+    // Populate dropdown with databases (excluding active one)
+    select.innerHTML = keys
+        .filter(id => id !== AppState.activeDbId)
+        .map(id => {
+            const db = AppState.databases[id];
+            return `<option value="${id}">${escapeHtml(db.name)} (${db.rows} items)</option>`;
+        })
+        .join('');
+    
+    modal.classList.remove('hidden');
+}
+
+function hideMergeModal() {
+    const modal = document.getElementById('merge-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
+function performMerge() {
+    const sourceId = document.getElementById('merge-source')?.value;
+    
+    if (!sourceId || !AppState.activeDbId) {
+        showToast('Select a database to merge');
+        return;
+    }
+    
+    const targetDb = AppState.databases[AppState.activeDbId];
+    const sourceDb = AppState.databases[sourceId];
+    
+    if (!targetDb || !sourceDb) return;
+    
+    // Get existing IDs in target
+    const existingIds = new Set(targetDb.data.map(item => item.id));
+    
+    // Count stats
+    let added = 0;
+    let skipped = 0;
+    
+    // Add unique entries from source
+    sourceDb.data.forEach(item => {
+        if (existingIds.has(item.id)) {
+            skipped++;
+        } else {
+            targetDb.data.push({
+                label: item.label,
+                id: item.id,
+                displayText: item.displayText || ''
+            });
+            existingIds.add(item.id);
+            added++;
+        }
+    });
+    
+    // Update row count
+    targetDb.rows = targetDb.data.length;
+    
+    saveState();
+    hideMergeModal();
+    updateSettingsUI();
+    updateDatabaseTab();
+    
+    showToast(`Merged: ${added} added, ${skipped} duplicates skipped`);
 }
 
 // ========================================
@@ -1489,4 +1628,4 @@ function showToast(msg, duration = 2500) {
 window.addEventListener('beforeunload', stopScanner);
 document.addEventListener('visibilitychange', () => { if (document.hidden) stopScanner(); });
 
-console.log('App loaded with Chain Transfer');
+console.log('App loaded with Chain Transfer + Add Entry + Merge');
