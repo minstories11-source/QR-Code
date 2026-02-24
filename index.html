@@ -22,7 +22,7 @@
         </div>
     </header>
 
-    <!-- Navigation - Only 3 tabs now -->
+    <!-- Navigation -->
     <nav class="nav-tabs">
         <button class="tab active" data-tab="generate">Generate</button>
         <button class="tab" data-tab="scan">Scan</button>
@@ -34,15 +34,30 @@
 
         <!-- ========== GENERATE TAB ========== -->
         <section id="generate-tab" class="tab-content active">
-            <div class="card">
-                <h2>Create QR Code</h2>
-                
-                <!-- Database Search - shows when database is loaded -->
-                <div id="db-search-container" class="form-group hidden">
-                    <label for="db-search">🔍 Search Database</label>
+            
+            <!-- Database Search Section - shows when database is loaded -->
+            <div id="db-search-container" class="card hidden">
+                <h2>🔍 Search Database</h2>
+                <div class="form-group" style="margin-bottom: 0;">
                     <input type="text" id="db-search" placeholder="Type to search database...">
                     <div id="search-results" class="search-results"></div>
                 </div>
+                
+                <!-- QR Result for Database - appears right under search -->
+                <div id="db-qr-result" class="qr-result-inline hidden">
+                    <div id="db-qr-display" class="qr-display"></div>
+                    <p id="db-qr-data" class="text-muted text-center"></p>
+                    <div class="btn-group">
+                        <button id="db-download-png" class="btn btn-primary">📥 Download</button>
+                        <button id="db-copy-qr" class="btn btn-secondary">📋 Copy</button>
+                        <button id="db-print-qr" class="btn btn-secondary">🖨️ Print</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Manual QR Generation -->
+            <div class="card">
+                <h2>Create QR Code</h2>
                 
                 <div class="form-group">
                     <label for="qr-input">Text or URL</label>
@@ -66,23 +81,19 @@
                     </div>
                 </div>
 
-                <div class="form-group hidden">
-                    <input type="color" id="bg-color" value="#ffffff">
-                </div>
+                <input type="color" id="bg-color" value="#ffffff" class="hidden">
 
                 <button id="generate-btn" class="btn btn-primary btn-block">Generate QR Code</button>
-            </div>
-
-            <!-- QR Result -->
-            <div id="qr-result" class="card hidden">
-                <h2>Your QR Code</h2>
-                <div id="qr-display" class="qr-display"></div>
-                <p id="qr-data-preview" class="text-muted text-center"></p>
                 
-                <div class="btn-group">
-                    <button id="download-png" class="btn btn-primary">📥 Download</button>
-                    <button id="copy-qr" class="btn btn-secondary">📋 Copy</button>
-                    <button id="print-qr" class="btn btn-secondary">🖨️ Print</button>
+                <!-- QR Result for Manual - appears right under button -->
+                <div id="qr-result" class="qr-result-inline hidden">
+                    <div id="qr-display" class="qr-display"></div>
+                    <p id="qr-data-preview" class="text-muted text-center"></p>
+                    <div class="btn-group">
+                        <button id="download-png" class="btn btn-primary">📥 Download</button>
+                        <button id="copy-qr" class="btn btn-secondary">📋 Copy</button>
+                        <button id="print-qr" class="btn btn-secondary">🖨️ Print</button>
+                    </div>
                 </div>
             </div>
 
@@ -192,7 +203,7 @@
 
     <!-- Footer -->
     <footer class="footer">
-        <p>QR Generator Pro</p>
+        <p>QR Generator Pro by jureczk</p>
     </footer>
 
     <!-- Toast Notification -->
