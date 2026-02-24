@@ -3,18 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <meta name="description" content="Free QR Code Generator with Database Support, Batch Generation, and Scanner">
+    <meta name="description" content="Free QR Code Generator with Database Support">
     <title>QR Generator Pro</title>
     
     <link rel="stylesheet" href="styles.css">
-    <link rel="icon" href="icons/favicon.png" type="image/png">
     
-    <!-- QR Code Library -->
+    <!-- Libraries from CDN -->
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-    <!-- jsQR for scanning -->
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
-    <!-- jsPDF for PDF export -->
-    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 </head>
 <body>
     
@@ -26,10 +22,9 @@
         </div>
     </header>
 
-    <!-- Navigation -->
+    <!-- Navigation - Only 3 tabs now -->
     <nav class="nav-tabs">
         <button class="tab active" data-tab="generate">Generate</button>
-        <button class="tab" data-tab="batch">Batch</button>
         <button class="tab" data-tab="scan">Scan</button>
         <button class="tab" data-tab="database">Database</button>
     </nav>
@@ -42,17 +37,17 @@
             <div class="card">
                 <h2>Create QR Code</h2>
                 
+                <!-- Database Search - shows when database is loaded -->
+                <div id="db-search-container" class="form-group hidden">
+                    <label for="db-search">🔍 Search Database</label>
+                    <input type="text" id="db-search" placeholder="Type to search database...">
+                    <div id="search-results" class="search-results"></div>
+                </div>
+                
                 <div class="form-group">
                     <label for="qr-input">Text or URL</label>
-                    <textarea id="qr-input" rows="3" placeholder="Enter text, URL, or search database..."></textarea>
+                    <textarea id="qr-input" rows="3" placeholder="Enter text or URL..."></textarea>
                     <small class="char-counter"><span id="char-count">0</span> / 2953</small>
-                </div>
-
-                <!-- Database Search (shows when database loaded) -->
-                <div id="db-search-container" class="form-group hidden">
-                    <label for="db-search">Search Database</label>
-                    <input type="text" id="db-search" placeholder="Type to search...">
-                    <div id="search-results" class="search-results"></div>
                 </div>
 
                 <div class="form-row">
@@ -66,34 +61,13 @@
                         </select>
                     </div>
                     <div class="form-group">
-                        <label for="qr-style">Style</label>
-                        <select id="qr-style">
-                            <option value="square">Square</option>
-                            <option value="dots">Dots</option>
-                            <option value="rounded">Rounded</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="fg-color">Foreground</label>
+                        <label for="fg-color">Color</label>
                         <input type="color" id="fg-color" value="#000000">
                     </div>
-                    <div class="form-group">
-                        <label for="bg-color">Background</label>
-                        <input type="color" id="bg-color" value="#ffffff">
-                    </div>
                 </div>
 
-                <div class="form-group">
-                    <label for="template-select">Template</label>
-                    <select id="template-select">
-                        <option value="">No Template</option>
-                        <option value="zone-blue">Zone Label - Blue</option>
-                        <option value="zone-gradient">Zone Label - Gradient</option>
-                        <option value="simple-border">Simple Border</option>
-                    </select>
+                <div class="form-group hidden">
+                    <input type="color" id="bg-color" value="#ffffff">
                 </div>
 
                 <button id="generate-btn" class="btn btn-primary btn-block">Generate QR Code</button>
@@ -103,15 +77,13 @@
             <div id="qr-result" class="card hidden">
                 <h2>Your QR Code</h2>
                 <div id="qr-display" class="qr-display"></div>
-                <p id="qr-data-preview" class="text-muted"></p>
+                <p id="qr-data-preview" class="text-muted text-center"></p>
                 
                 <div class="btn-group">
-                    <button id="download-png" class="btn btn-primary">📥 PNG</button>
+                    <button id="download-png" class="btn btn-primary">📥 Download</button>
                     <button id="copy-qr" class="btn btn-secondary">📋 Copy</button>
                     <button id="print-qr" class="btn btn-secondary">🖨️ Print</button>
                 </div>
-
-                <div id="scan-distance" class="info-box"></div>
             </div>
 
             <!-- History -->
@@ -124,80 +96,10 @@
             </div>
         </section>
 
-        <!-- ========== BATCH TAB ========== -->
-        <section id="batch-tab" class="tab-content">
-            <div class="card">
-                <h2>Batch Generation</h2>
-                
-                <div class="form-group">
-                    <label for="batch-pattern">Pattern</label>
-                    <input type="text" id="batch-pattern" placeholder="e.g., ZONE-{A-D}-{01-10}">
-                    <small class="help-text">Use {1-10} for numbers, {A-Z} for letters, {item1|item2} for lists</small>
-                </div>
-
-                <div class="form-group">
-                    <label for="batch-manual">Or Enter Manually (one per line)</label>
-                    <textarea id="batch-manual" rows="4" placeholder="Item 1&#10;Item 2&#10;Item 3"></textarea>
-                </div>
-
-                <div class="form-group">
-                    <label for="batch-template">Template</label>
-                    <select id="batch-template">
-                        <option value="">No Template</option>
-                        <option value="zone-blue">Zone Label - Blue</option>
-                        <option value="zone-gradient">Zone Label - Gradient</option>
-                        <option value="simple-border">Simple Border</option>
-                    </select>
-                </div>
-
-                <div class="btn-group">
-                    <button id="preview-batch" class="btn btn-secondary">Preview</button>
-                    <button id="generate-batch" class="btn btn-primary">Generate All</button>
-                </div>
-            </div>
-
-            <!-- Batch Preview -->
-            <div id="batch-preview" class="card hidden">
-                <h2>Preview</h2>
-                <pre id="batch-preview-list"></pre>
-            </div>
-
-            <!-- Batch Progress -->
-            <div id="batch-progress" class="card hidden">
-                <h2>Generating...</h2>
-                <div class="progress-bar">
-                    <div id="progress-fill" class="progress-fill"></div>
-                </div>
-                <p id="progress-text">0%</p>
-            </div>
-
-            <!-- Batch Results -->
-            <div id="batch-results" class="card hidden">
-                <h2>Generated QR Codes</h2>
-                <div id="batch-grid" class="batch-grid"></div>
-                
-                <div class="btn-group">
-                    <button id="download-all-zip" class="btn btn-primary">📥 Download All</button>
-                    <button id="download-pdf" class="btn btn-secondary">📄 PDF</button>
-                    <button id="print-labels" class="btn btn-secondary">🏷️ Print Labels</button>
-                </div>
-
-                <!-- Label Template Selection -->
-                <div class="form-group">
-                    <label>Label Template</label>
-                    <div class="label-templates">
-                        <button class="label-btn" data-template="avery-5160">Avery 5160<br><small>30 labels</small></button>
-                        <button class="label-btn" data-template="avery-5163">Avery 5163<br><small>10 labels</small></button>
-                        <button class="label-btn" data-template="avery-5167">Avery 5167<br><small>80 labels</small></button>
-                    </div>
-                </div>
-            </div>
-        </section>
-
         <!-- ========== SCAN TAB ========== -->
         <section id="scan-tab" class="tab-content">
             <div class="card">
-                <h2>Scan QR Code</h2>
+                <h2>📷 Scan QR Code</h2>
                 
                 <div class="scanner-container">
                     <video id="scanner-video" autoplay playsinline></video>
@@ -218,7 +120,7 @@
                 </div>
 
                 <div class="form-group">
-                    <label for="scan-upload" class="btn btn-secondary btn-block upload-label">
+                    <label for="scan-upload" class="btn btn-secondary btn-block">
                         📁 Upload Image
                     </label>
                     <input type="file" id="scan-upload" accept="image/*" class="hidden">
@@ -232,7 +134,7 @@
                 <div class="btn-group">
                     <button id="copy-scan" class="btn btn-primary">📋 Copy</button>
                     <button id="open-url" class="btn btn-secondary">🔗 Open URL</button>
-                    <button id="generate-from-scan" class="btn btn-secondary">⚡ Generate QR</button>
+                    <button id="generate-from-scan" class="btn btn-secondary">⚡ Make QR</button>
                 </div>
             </div>
 
@@ -248,38 +150,30 @@
         <!-- ========== DATABASE TAB ========== -->
         <section id="database-tab" class="tab-content">
             <div class="card">
-                <h2>📦 Database Management</h2>
+                <h2>📦 Upload Database</h2>
                 
                 <div class="upload-zone" id="db-drop-zone">
                     <div class="upload-icon">📂</div>
-                    <p>Drag & drop CSV/TSV file here</p>
-                    <p class="text-muted">or</p>
-                    <label for="db-upload" class="btn btn-primary">Browse Files</label>
-                    <input type="file" id="db-upload" accept=".csv,.tsv,.txt" class="hidden">
-                    <small class="help-text">Format: Label, ID, DisplayText (optional)</small>
+                    <p>Tap to upload CSV/TSV file</p>
+                    <small class="help-text">Format: Label, ID, Description (optional)</small>
+                    <input type="file" id="db-upload" accept=".csv,.tsv,.txt">
                 </div>
 
                 <div id="upload-status" class="status hidden"></div>
             </div>
 
-            <!-- QR Database Import -->
+            <!-- Load from URL -->
             <div class="card">
-                <h2>📱 Import via QR Code</h2>
-                <p class="text-muted">Scan a QR code containing a database URL to instantly load data.</p>
-                <button id="scan-db-qr" class="btn btn-secondary btn-block">📷 Scan Database QR</button>
-                
-                <div class="divider"><span>OR</span></div>
-                
+                <h2>🌐 Load from URL</h2>
                 <div class="form-group">
-                    <label for="db-url">Database URL</label>
                     <input type="text" id="db-url" placeholder="https://example.com/database.json">
-                    <button id="load-db-url" class="btn btn-secondary btn-block">Load from URL</button>
+                    <button id="load-db-url" class="btn btn-secondary btn-block" style="margin-top: 8px;">Load Database</button>
                 </div>
             </div>
 
             <!-- Loaded Databases -->
             <div class="card">
-                <h2>Loaded Databases</h2>
+                <h2>📋 Your Databases</h2>
                 <div id="db-list" class="db-list">
                     <p class="text-muted">No databases loaded</p>
                 </div>
@@ -287,11 +181,10 @@
 
             <!-- Active Database Info -->
             <div id="active-db-card" class="card hidden">
-                <h2>Active Database</h2>
-                <p id="active-db-name"></p>
+                <h2>✓ Active Database</h2>
+                <p><strong id="active-db-name"></strong></p>
                 <p id="active-db-info" class="text-muted"></p>
                 <button id="export-db" class="btn btn-small btn-secondary">📤 Export JSON</button>
-                <button id="generate-db-qr" class="btn btn-small btn-secondary">📱 Generate Share QR</button>
             </div>
         </section>
 
@@ -299,7 +192,7 @@
 
     <!-- Footer -->
     <footer class="footer">
-        <p>QR Generator Pro | <a href="https://github.com/YOUR_USERNAME/qr-generator" target="_blank">GitHub</a></p>
+        <p>QR Generator Pro</p>
     </footer>
 
     <!-- Toast Notification -->
