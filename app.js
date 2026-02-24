@@ -1,6 +1,6 @@
 // ========================================
-// QR GENERATOR PRO - WITH JSON IMPORT
-// Share databases between users
+// QR GENERATOR PRO - WITH CHAIN TRANSFER
+// Share databases between phones via QR chain
 // ========================================
 
 const AppState = {
@@ -16,6 +16,16 @@ const AppState = {
         stream: null,
         scanning: false,
         animationId: null
+    },
+    // NEW: Chain transfer state
+    chain: {
+        sending: false,
+        receiving: null,  // { chainId, total, parts: {}, data: [] }
+        currentPart: 0,
+        totalParts: 0,
+        qrCodes: [],
+        intervalId: null,
+        speed: 2000  // ms between QR switches
     }
 };
 
@@ -155,10 +165,23 @@ function setupEventListeners() {
     document.getElementById('export-db')?.addEventListener('click', exportAsJSON);
     document.getElementById('export-csv')?.addEventListener('click', exportAsCSV);
     document.getElementById('clear-all-data')?.addEventListener('click', clearAllData);
+    
+    // NEW: Chain transfer
+    document.getElementById('start-chain-transfer')?.addEventListener('click', startChainTransfer);
+    document.getElementById('stop-chain-transfer')?.addEventListener('click', stopChainTransfer);
+    document.getElementById('chain-speed')?.addEventListener('input', updateChainSpeed);
+    document.getElementById('chain-prev')?.addEventListener('click', chainPrev);
+    document.getElementById('chain-next')?.addEventListener('click', chainNext);
+    document.getElementById('cancel-chain-receive')?.addEventListener('click', cancelChainReceive);
 }
 
 // ========== TABS ==========
 function switchTab(tabName) {
+    // Stop chain transfer if leaving settings
+    if (tabName !== 'settings' && AppState.chain.sending) {
+        stopChainTransfer();
+    }
+    
     document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tabName));
     document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === `${tabName}-tab`));
     
@@ -563,6 +586,12 @@ function stopScanner() {
 let lastScanned = '', lastScanTime = 0;
 
 function handleScanResult(data) {
+    // Check if this is a chain transfer QR
+    if (data.startsWith('QRP:1:')) {
+        handleChainQR(data);
+        return;
+    }
+    
     if (data === lastScanned && Date.now() - lastScanTime < 2000) return;
     lastScanned = data;
     lastScanTime = Date.now();
@@ -668,6 +697,313 @@ function generateFromScan() {
     document.getElementById('qr-input').value = AppState.currentScan;
     updateCharCount();
     switchTab('generate');
+}
+
+// ========================================
+// CHAIN TRANSFER - Phone to Phone
+// ========================================
+
+const CHAIN_PREFIX = 'QRP:1:';  // QR Pro : version 1
+const CHUNK_SIZE = 1500;  // Safe size for QR codes
+
+async function startChainTransfer() {
+    if (!AppState.activeDbId) {
+        showToast('No database to transfer');
+        return;
+    }
+    
+    const db = AppState.databases[AppState.activeDbId];
+    const chainUI = document.getElementById('chain-transfer-ui');
+    const startBtn = document.getElementById('start-chain-transfer');
+    
+    // Prepare data
+    const exportData = {
+        n: db.name,  // Short keys to save space
+        d: db.data.map(item => ({
+            l: item.label,
+            i: item.id,
+            t: item.displayText || ''
+        }))
+    };
+    
+    const jsonStr = JSON.stringify(exportData);
+    const chainId = generateId().substring(0, 6);
+    
+    // Split into chunks
+    const chunks = [];
+    for (let i = 0; i < jsonStr.length; i += CHUNK_SIZE) {
+        chunks.push(jsonStr.substring(i, i + CHUNK_SIZE));
+    }
+    
+    // Generate QR codes for each chunk
+    AppState.chain.qrCodes = [];
+    AppState.chain.totalParts = chunks.length;
+    AppState.chain.currentPart = 0;
+    
+    showToast(`Creating ${chunks.length} QR codes...`);
+    
+    try {
+        for (let i = 0; i < chunks.length; i++) {
+            // Format: QRP:1:chainId:partNum:totalParts:data
+            const qrData = `${CHAIN_PREFIX}${chainId}:${i + 1}:${chunks.length}:${chunks[i]}`;
+            const qrDataUrl = await generateBasicQR(qrData, 'L', '#000000', '#ffffff');
+            AppState.chain.qrCodes.push(qrDataUrl);
+        }
+        
+        // Show UI
+        AppState.chain.sending = true;
+        if (startBtn) startBtn.style.display = 'none';
+        if (chainUI) chainUI.style.display = 'block';
+        
+        updateChainDisplay();
+        startChainAutoPlay();
+        
+        showToast('Show these QRs to receiving phone');
+        
+    } catch (e) {
+        console.error('Chain generation error:', e);
+        showToast('Error creating transfer');
+    }
+}
+
+function stopChainTransfer() {
+    AppState.chain.sending = false;
+    
+    if (AppState.chain.intervalId) {
+        clearInterval(AppState.chain.intervalId);
+        AppState.chain.intervalId = null;
+    }
+    
+    AppState.chain.qrCodes = [];
+    AppState.chain.currentPart = 0;
+    AppState.chain.totalParts = 0;
+    
+    const chainUI = document.getElementById('chain-transfer-ui');
+    const startBtn = document.getElementById('start-chain-transfer');
+    
+    if (chainUI) chainUI.style.display = 'none';
+    if (startBtn) startBtn.style.display = 'block';
+}
+
+function updateChainDisplay() {
+    const display = document.getElementById('chain-qr-display');
+    const progress = document.getElementById('chain-progress');
+    const progressBar = document.getElementById('chain-progress-bar');
+    
+    if (!display || !AppState.chain.qrCodes.length) return;
+    
+    const part = AppState.chain.currentPart;
+    const total = AppState.chain.totalParts;
+    
+    display.innerHTML = `<img src="${AppState.chain.qrCodes[part]}" alt="QR ${part + 1}/${total}">`;
+    
+    if (progress) {
+        progress.textContent = `${part + 1} of ${total}`;
+    }
+    
+    if (progressBar) {
+        const pct = ((part + 1) / total) * 100;
+        progressBar.style.width = `${pct}%`;
+    }
+}
+
+function startChainAutoPlay() {
+    if (AppState.chain.intervalId) {
+        clearInterval(AppState.chain.intervalId);
+    }
+    
+    AppState.chain.intervalId = setInterval(() => {
+        if (!AppState.chain.sending) return;
+        
+        AppState.chain.currentPart = (AppState.chain.currentPart + 1) % AppState.chain.totalParts;
+        updateChainDisplay();
+    }, AppState.chain.speed);
+}
+
+function updateChainSpeed(e) {
+    const speed = parseInt(e.target.value) || 2000;
+    AppState.chain.speed = speed;
+    
+    const label = document.getElementById('chain-speed-label');
+    if (label) label.textContent = `${(speed / 1000).toFixed(1)}s`;
+    
+    // Restart autoplay with new speed
+    if (AppState.chain.sending) {
+        startChainAutoPlay();
+    }
+}
+
+function chainPrev() {
+    if (!AppState.chain.totalParts) return;
+    AppState.chain.currentPart = (AppState.chain.currentPart - 1 + AppState.chain.totalParts) % AppState.chain.totalParts;
+    updateChainDisplay();
+}
+
+function chainNext() {
+    if (!AppState.chain.totalParts) return;
+    AppState.chain.currentPart = (AppState.chain.currentPart + 1) % AppState.chain.totalParts;
+    updateChainDisplay();
+}
+
+// ========== CHAIN RECEIVING ==========
+
+function handleChainQR(data) {
+    // Parse: QRP:1:chainId:partNum:totalParts:payload
+    const parts = data.substring(CHAIN_PREFIX.length).split(':');
+    
+    if (parts.length < 4) {
+        console.warn('Invalid chain QR format');
+        return;
+    }
+    
+    const chainId = parts[0];
+    const partNum = parseInt(parts[1]);
+    const totalParts = parseInt(parts[2]);
+    const payload = parts.slice(3).join(':');  // Rejoin in case payload contains colons
+    
+    if (isNaN(partNum) || isNaN(totalParts) || partNum < 1 || partNum > totalParts) {
+        console.warn('Invalid chain part numbers');
+        return;
+    }
+    
+    // Initialize or validate receiving state
+    if (!AppState.chain.receiving || AppState.chain.receiving.chainId !== chainId) {
+        // New chain transfer
+        AppState.chain.receiving = {
+            chainId: chainId,
+            total: totalParts,
+            parts: {},
+            startTime: Date.now()
+        };
+        showChainReceiveUI();
+    }
+    
+    // Check if we already have this part
+    if (AppState.chain.receiving.parts[partNum]) {
+        updateChainReceiveProgress();
+        return;
+    }
+    
+    // Store the part
+    AppState.chain.receiving.parts[partNum] = payload;
+    
+    // Visual feedback
+    const overlay = document.querySelector('.scanner-overlay');
+    if (overlay) {
+        overlay.style.background = 'rgba(59, 130, 246, 0.5)';
+        setTimeout(() => overlay.style.background = 'transparent', 200);
+    }
+    navigator.vibrate?.([50]);
+    
+    updateChainReceiveProgress();
+    
+    // Check if complete
+    const received = Object.keys(AppState.chain.receiving.parts).length;
+    if (received === totalParts) {
+        completeChainReceive();
+    }
+}
+
+function showChainReceiveUI() {
+    const ui = document.getElementById('chain-receive-ui');
+    const normalResult = document.getElementById('scan-result');
+    
+    if (ui) ui.style.display = 'block';
+    if (normalResult) normalResult.style.display = 'none';
+    
+    updateChainReceiveProgress();
+}
+
+function updateChainReceiveProgress() {
+    const state = AppState.chain.receiving;
+    if (!state) return;
+    
+    const received = Object.keys(state.parts).length;
+    const total = state.total;
+    const pct = (received / total) * 100;
+    
+    const progress = document.getElementById('chain-receive-progress');
+    const bar = document.getElementById('chain-receive-bar');
+    const missing = document.getElementById('chain-receive-missing');
+    
+    if (progress) progress.textContent = `${received} of ${total}`;
+    if (bar) bar.style.width = `${pct}%`;
+    
+    if (missing) {
+        const missingParts = [];
+        for (let i = 1; i <= total; i++) {
+            if (!state.parts[i]) missingParts.push(i);
+        }
+        
+        if (missingParts.length > 0 && missingParts.length <= 10) {
+            missing.textContent = `Missing: #${missingParts.join(', #')}`;
+        } else if (missingParts.length > 10) {
+            missing.textContent = `Missing ${missingParts.length} parts`;
+        } else {
+            missing.textContent = 'All parts received!';
+        }
+    }
+}
+
+async function completeChainReceive() {
+    const state = AppState.chain.receiving;
+    if (!state) return;
+    
+    try {
+        // Reassemble JSON
+        let jsonStr = '';
+        for (let i = 1; i <= state.total; i++) {
+            jsonStr += state.parts[i];
+        }
+        
+        const importData = JSON.parse(jsonStr);
+        
+        // Convert back to full format
+        const dbData = importData.d.map(item => ({
+            label: item.l,
+            id: item.i,
+            displayText: item.t || ''
+        }));
+        
+        const dbId = generateId();
+        const dbName = importData.n || 'Transferred Database';
+        
+        AppState.databases[dbId] = {
+            name: dbName,
+            data: dbData,
+            created: Date.now(),
+            rows: dbData.length
+        };
+        
+        AppState.activeDbId = dbId;
+        saveState();
+        
+        // Success!
+        const duration = ((Date.now() - state.startTime) / 1000).toFixed(1);
+        showToast(`✓ Imported "${dbName}" (${dbData.length} items) in ${duration}s`);
+        
+        // Reset UI
+        hideChainReceiveUI();
+        updateSettingsUI();
+        updateDatabaseTab();
+        
+    } catch (e) {
+        console.error('Chain reassembly error:', e);
+        showToast('Error: Transfer data corrupted');
+        hideChainReceiveUI();
+    }
+}
+
+function cancelChainReceive() {
+    hideChainReceiveUI();
+    showToast('Transfer cancelled');
+}
+
+function hideChainReceiveUI() {
+    AppState.chain.receiving = null;
+    
+    const ui = document.getElementById('chain-receive-ui');
+    if (ui) ui.style.display = 'none';
 }
 
 // ========================================
@@ -1132,4 +1468,4 @@ function showToast(msg, duration = 2500) {
 window.addEventListener('beforeunload', stopScanner);
 document.addEventListener('visibilitychange', () => { if (document.hidden) stopScanner(); });
 
-console.log('App loaded');
+console.log('App loaded with Chain Transfer');
