@@ -2,46 +2,36 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <meta name="description" content="Free QR Code Generator with Database Support">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>QR Generator Pro</title>
-    
     <link rel="stylesheet" href="styles.css">
-    
-    <!-- Libraries from CDN -->
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 </head>
 <body>
-    
-    <!-- Header -->
-    <header class="header">
-        <div class="header-content">
-            <h1>⚡ QR Generator Pro</h1>
-            <button id="theme-toggle" class="btn-icon" title="Toggle theme">🌙</button>
-        </div>
-    </header>
+    <div class="app">
+        <!-- Header -->
+        <header class="header">
+            <h1>📱 QR Generator Pro</h1>
+            <button id="theme-toggle" class="theme-btn">🌙</button>
+        </header>
 
-    <!-- Navigation -->
-    <nav class="nav-tabs">
-        <button class="tab active" data-tab="generate">Generate</button>
-        <button class="tab" data-tab="database">Database</button>
-        <button class="tab" data-tab="scan">Scan</button>
-        <button class="tab" data-tab="settings">Settings</button>
-    </nav>
+        <!-- Tabs -->
+        <nav class="tabs">
+            <button class="tab active" data-tab="generate">Generate</button>
+            <button class="tab" data-tab="database">Database</button>
+            <button class="tab" data-tab="scan">Scan</button>
+            <button class="tab" data-tab="settings">Settings</button>
+        </nav>
 
-    <!-- Main Content -->
-    <main class="main">
-
-        <!-- ========== GENERATE TAB ========== -->
-        <section id="generate-tab" class="tab-content active">
+        <!-- Generate Tab -->
+        <div id="generate-tab" class="tab-content active">
             <div class="card">
                 <h2>Create QR Code</h2>
-                
                 <div class="form-group">
                     <label for="qr-input">Text or URL</label>
-                    <textarea id="qr-input" rows="3" placeholder="Enter text or URL..."></textarea>
-                    <small class="char-counter"><span id="char-count">0</span> / 2953</small>
+                    <textarea id="qr-input" rows="3" placeholder="Enter text, URL, or data..."></textarea>
+                    <small><span id="char-count">0</span> / 2953 characters</small>
                 </div>
 
                 <div class="form-row">
@@ -50,8 +40,8 @@
                         <select id="error-level">
                             <option value="L">Low (7%)</option>
                             <option value="M" selected>Medium (15%)</option>
-                            <option value="Q">High (25%)</option>
-                            <option value="H">Maximum (30%)</option>
+                            <option value="Q">Quartile (25%)</option>
+                            <option value="H">High (30%)</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -60,199 +50,203 @@
                     </div>
                 </div>
 
-                <input type="color" id="bg-color" value="#ffffff" class="hidden">
-
-                <button id="generate-btn" class="btn btn-primary btn-block">Generate QR Code</button>
+                <button id="generate-btn" class="btn btn-primary">Generate QR Code</button>
             </div>
 
-            <!-- QR Result -->
             <div id="qr-result" class="card hidden">
                 <div id="qr-display" class="qr-display"></div>
                 <p id="qr-data-preview" class="text-muted text-center"></p>
                 <div class="btn-group">
-                    <button id="download-png" class="btn btn-primary">📥 Download</button>
+                    <button id="download-png" class="btn btn-secondary">💾 Save</button>
                     <button id="copy-qr" class="btn btn-secondary">📋 Copy</button>
                     <button id="print-qr" class="btn btn-secondary">🖨️ Print</button>
                 </div>
             </div>
 
-            <!-- History -->
             <div class="card">
-                <h2>Recent History</h2>
-                <div id="history-list" class="history-list">
-                    <p class="text-muted">No history yet</p>
-                </div>
-                <button id="clear-history" class="btn btn-small btn-danger">Clear History</button>
+                <h3>Recent</h3>
+                <div id="history-list"></div>
+                <button id="clear-history" class="btn btn-small btn-secondary">Clear History</button>
             </div>
-        </section>
+        </div>
 
-        <!-- ========== DATABASE TAB ========== -->
-        <section id="database-tab" class="tab-content">
-            
-            <!-- No database message -->
-            <div id="no-db-message" class="card text-center">
-                <div class="empty-state">
-                    <div class="empty-icon">📦</div>
-                    <h2>No Database Loaded</h2>
-                    <p class="text-muted">Go to Settings to upload a CSV file</p>
-                    <button id="go-to-settings" class="btn btn-primary">Go to Settings</button>
-                </div>
+        <!-- Database Tab -->
+        <div id="database-tab" class="tab-content">
+            <div id="no-db-message" class="card">
+                <p class="text-muted text-center">No database loaded</p>
+                <button id="go-to-settings" class="btn btn-primary">Load Database</button>
             </div>
 
-            <!-- Database search section -->
-            <div id="db-search-section" class="hidden">
-                <div class="card">
-                    <h2>🔍 Search Database</h2>
-                    <p id="db-info-text" class="text-muted"></p>
-                    
-                    <div class="form-group search-wrapper">
-                        <input type="text" id="db-search" placeholder="Type to search..." autocomplete="off">
-                        <button id="clear-search" class="clear-btn hidden">✕</button>
-                    </div>
-
-                    <!-- Search Results -->
-                    <div id="search-results" class="search-results-list"></div>
+            <div id="db-search-section" class="card" style="display: none;">
+                <div id="db-info-text" class="text-muted" style="margin-bottom: 1rem;"></div>
+                <div class="search-wrapper">
+                    <input type="text" id="db-search" placeholder="Search by label or ID...">
+                    <button id="clear-search" class="clear-btn" style="display: none;">✕</button>
                 </div>
+                <div id="search-results"></div>
+            </div>
 
-                <!-- QR Code Result -->
-                <div id="db-qr-result" class="card hidden">
-                    <div id="db-qr-display" class="qr-display"></div>
-                    <p id="db-qr-label" class="qr-label"></p>
-                    <p id="db-qr-id" class="text-muted text-center"></p>
-                    <div class="btn-group">
-                        <button id="db-download-png" class="btn btn-primary">📥 Download</button>
-                        <button id="db-copy-qr" class="btn btn-secondary">📋 Copy</button>
-                        <button id="db-print-qr" class="btn btn-secondary">🖨️ Print</button>
-                    </div>
+            <div id="db-qr-result" class="card" style="display: none;">
+                <div id="db-qr-display" class="qr-display"></div>
+                <h3 id="db-qr-label" class="text-center"></h3>
+                <p id="db-qr-id" class="text-muted text-center"></p>
+                <div class="btn-group">
+                    <button id="db-download-png" class="btn btn-secondary">💾 Save</button>
+                    <button id="db-copy-qr" class="btn btn-secondary">📋 Copy</button>
+                    <button id="db-print-qr" class="btn btn-secondary">🖨️ Print</button>
                 </div>
             </div>
-        </section>
+        </div>
 
-        <!-- ========== SCAN TAB ========== -->
-        <section id="scan-tab" class="tab-content">
+        <!-- Scan Tab -->
+        <div id="scan-tab" class="tab-content">
             <div class="card">
-                <h2>📷 Scan QR Code</h2>
+                <div class="scanner-container">
+                    <video id="scanner-video" playsinline></video>
+                    <div class="scanner-overlay"></div>
+                </div>
+                <p id="scanner-status" class="text-center text-muted">Tap to start camera</p>
+                <button id="start-scanner-btn" class="btn btn-primary" style="width: 100%;">📷 Start Camera</button>
                 
-                <!-- Scanner Status -->
-                <p id="scanner-status" class="text-muted text-center"></p>
+                <div class="form-row" style="margin-top: 1rem;">
+                    <select id="camera-select" class="form-control">
+                        <option value="">Select camera...</option>
+                    </select>
+                    <label class="btn btn-secondary" style="margin: 0;">
+                        📁 Upload
+                        <input type="file" id="scan-upload" accept="image/*" hidden>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Chain Receive UI (hidden by default) -->
+            <div id="chain-receive-ui" class="card" style="display: none; background: linear-gradient(135deg, var(--primary-light), var(--bg-secondary));">
+                <h3>📥 Receiving Database Transfer...</h3>
                 
-                <!-- Start Button (for iOS) -->
-                <button id="start-scanner-btn" class="btn btn-primary btn-block" style="margin-bottom: 16px;">
-                    📷 Start Camera
+                <div style="text-align: center; margin: 1.5rem 0;">
+                    <div style="font-size: 2rem; font-weight: bold; color: var(--primary);">
+                        <span id="chain-receive-progress">0 of 0</span>
+                    </div>
+                    <div style="margin-top: 1rem; background: rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden; height: 16px;">
+                        <div id="chain-receive-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--primary), var(--success)); transition: width 0.3s;"></div>
+                    </div>
+                    <p id="chain-receive-missing" class="text-muted" style="margin-top: 1rem;">Keep scanning QR codes...</p>
+                </div>
+                
+                <button id="cancel-chain-receive" class="btn btn-secondary" style="width: 100%;">
+                    ✕ Cancel Transfer
+                </button>
+            </div>
+
+            <div id="scan-result" class="card" style="display: none;">
+                <h3>Scanned Result</h3>
+                <pre id="scan-data" class="scan-data"></pre>
+                <div class="btn-group">
+                    <button id="copy-scan" class="btn btn-secondary">📋 Copy</button>
+                    <button id="open-url" class="btn btn-secondary">🔗 Open</button>
+                    <button id="generate-from-scan" class="btn btn-secondary">📲 To QR</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Scan History</h3>
+                <div id="scan-history"></div>
+            </div>
+        </div>
+
+        <!-- Settings Tab -->
+        <div id="settings-tab" class="tab-content">
+            <!-- Phone-to-Phone Transfer -->
+            <div class="card">
+                <h3>📲 Phone-to-Phone Transfer</h3>
+                <p class="text-muted">Transfer your database to another phone via QR codes - no internet needed!</p>
+                
+                <button id="start-chain-transfer" class="btn btn-primary" style="width: 100%; margin-top: 1rem;">
+                    📤 Transfer Active Database
                 </button>
                 
-                <!-- Video Container -->
-                <div class="scanner-container">
-                    <video id="scanner-video" autoplay playsinline muted></video>
-                    <div class="scanner-overlay">
-                        <div class="scanner-frame"></div>
+                <!-- Sender UI (hidden by default) -->
+                <div id="chain-transfer-ui" style="display: none; margin-top: 1.5rem;">
+                    <div id="chain-qr-display" class="qr-display" style="margin: 0 auto;"></div>
+                    
+                    <div style="text-align: center; margin: 1rem 0;">
+                        <div style="font-size: 1.25rem; font-weight: bold;">
+                            Showing QR <span id="chain-progress">1 of 1</span>
+                        </div>
+                        <div style="margin-top: 0.75rem; background: var(--bg-secondary); border-radius: 8px; overflow: hidden; height: 10px;">
+                            <div id="chain-progress-bar" style="width: 0%; height: 100%; background: var(--primary); transition: width 0.3s;"></div>
+                        </div>
+                        <p class="text-muted" style="margin-top: 0.5rem; font-size: 0.875rem;">
+                            Point receiving phone's camera at these codes
+                        </p>
                     </div>
-                </div>
-
-                <!-- Camera Selector -->
-                <div class="form-group">
-                    <label for="camera-select">Camera</label>
-                    <select id="camera-select">
-                        <option>Select camera...</option>
-                    </select>
-                </div>
-
-                <div class="divider"><span>OR</span></div>
-
-                <!-- Upload Image -->
-                <div class="form-group">
-                    <label for="scan-upload" class="btn btn-secondary btn-block">
-                        📁 Upload QR Image
-                    </label>
-                    <input type="file" id="scan-upload" accept="image/*" class="hidden">
-                </div>
-            </div>
-
-            <!-- Scan Result -->
-            <div id="scan-result" class="card hidden">
-                <h2>✅ Scan Result</h2>
-                <div id="scan-data" class="scan-data"></div>
-                <div class="btn-group">
-                    <button id="copy-scan" class="btn btn-primary">📋 Copy</button>
-                    <button id="open-url" class="btn btn-secondary">🔗 Open URL</button>
-                    <button id="generate-from-scan" class="btn btn-secondary">⚡ Make QR</button>
+                    
+                    <div style="display: flex; gap: 0.5rem; justify-content: center;">
+                        <button id="chain-prev" class="btn btn-secondary">◀ Prev</button>
+                        <button id="chain-next" class="btn btn-secondary">Next ▶</button>
+                    </div>
+                    
+                    <div style="margin-top: 1.25rem;">
+                        <label style="display: flex; justify-content: space-between;">
+                            <span>Auto-cycle Speed</span>
+                            <span id="chain-speed-label">2.0s</span>
+                        </label>
+                        <input type="range" id="chain-speed" min="500" max="5000" step="250" value="2000" style="width: 100%; margin-top: 0.5rem;">
+                    </div>
+                    
+                    <button id="stop-chain-transfer" class="btn btn-danger" style="width: 100%; margin-top: 1.25rem;">
+                        ✕ Stop Transfer
+                    </button>
                 </div>
             </div>
 
-            <!-- Scan History -->
+            <!-- Import Database -->
             <div class="card">
-                <h2>Scan History</h2>
-                <div id="scan-history" class="history-list">
-                    <p class="text-muted">No scans yet</p>
+                <h3>📂 Import Database</h3>
+                <div id="db-drop-zone" class="drop-zone">
+                    <p>📁 Tap to select file or drag & drop</p>
+                    <p class="text-muted">JSON or CSV</p>
+                    <input type="file" id="db-upload" accept=".json,.csv,.tsv,.txt" hidden>
                 </div>
-            </div>
-        </section>
-
-        <!-- ========== SETTINGS TAB ========== -->
-        <section id="settings-tab" class="tab-content">
-            
-            <!-- Upload Database -->
-            <div class="card">
-                <h2>📦 Import Database</h2>
                 
-                <div class="upload-zone" id="db-drop-zone">
-                    <div class="upload-icon">📂</div>
-                    <p>Tap to upload file</p>
-                    <small class="help-text">Supports: CSV, TSV, JSON</small>
-                    <input type="file" id="db-upload" accept=".csv,.tsv,.txt,.json">
+                <div class="divider">or load from URL</div>
+                
+                <div class="form-row">
+                    <input type="url" id="db-url" placeholder="https://example.com/data.json" class="form-control">
+                    <button id="load-db-url" class="btn btn-secondary">Load</button>
                 </div>
-
-                <div id="upload-status" class="status hidden"></div>
+                
+                <div id="upload-status" class="status" style="display: none;"></div>
             </div>
 
-            <!-- Load from URL -->
-            <div class="card">
-                <h2>🌐 Load from URL</h2>
-                <div class="form-group">
-                    <input type="text" id="db-url" placeholder="https://example.com/database.json">
-                    <button id="load-db-url" class="btn btn-secondary btn-block" style="margin-top: 8px;">Load Database</button>
-                </div>
-            </div>
-
-            <!-- Your Databases -->
-            <div class="card">
-                <h2>📋 Your Databases</h2>
-                <div id="db-list" class="db-list">
-                    <p class="text-muted">No databases loaded</p>
-                </div>
-            </div>
-
-            <!-- Active Database Actions -->
-            <div id="active-db-card" class="card hidden">
-                <h2>✓ Active Database</h2>
-                <p><strong id="active-db-name"></strong></p>
+            <!-- Active Database -->
+            <div id="active-db-card" class="card" style="display: none;">
+                <h3>✓ Active Database</h3>
+                <p id="active-db-name" style="font-weight: bold;"></p>
                 <p id="active-db-info" class="text-muted"></p>
-                
-                <div class="btn-group" style="margin-top: 12px;">
+                <div class="btn-group">
                     <button id="export-db" class="btn btn-secondary">📤 Export JSON</button>
-                    <button id="export-csv" class="btn btn-secondary">📄 Export CSV</button>
+                    <button id="export-csv" class="btn btn-secondary">📤 Export CSV</button>
                 </div>
+            </div>
+
+            <!-- All Databases -->
+            <div class="card">
+                <h3>📚 Your Databases</h3>
+                <div id="db-list"></div>
             </div>
 
             <!-- Storage Info -->
             <div class="card">
-                <h2>💾 Storage</h2>
-                <p id="storage-info" class="text-muted">Calculating...</p>
-                <button id="clear-all-data" class="btn btn-small btn-danger" style="margin-top: 12px;">Clear All Data</button>
+                <h3>💾 Storage</h3>
+                <div id="storage-info" class="text-muted"></div>
+                <button id="clear-all-data" class="btn btn-danger" style="margin-top: 1rem;">🗑️ Clear All Data</button>
             </div>
+        </div>
 
-        </section>
-
-
-    </main>
-
-    <!-- Footer -->
-    <footer class="footer">
-        <p>QR Generator Pro</p>
-    </footer>
-
-    <!-- Toast -->
-    <div id="toast" class="toast hidden"></div>
+        <!-- Toast -->
+        <div id="toast" class="toast"></div>
+    </div>
 
     <script src="app.js"></script>
 </body>
