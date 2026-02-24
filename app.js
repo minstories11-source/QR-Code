@@ -1,6 +1,6 @@
 // ========================================
 // QR GENERATOR PRO - SIMPLIFIED
-// Generate, Scan, Database Search
+// Search results + QR directly under search bar
 // ========================================
 
 // ========== GLOBAL STATE ==========
@@ -11,6 +11,7 @@ const AppState = {
     scanHistory: [],
     theme: 'light',
     currentQR: null,
+    currentDbQR: null,
     currentScan: null,
     scanner: {
         stream: null,
@@ -67,15 +68,23 @@ function setupEventListeners() {
         tab.addEventListener('click', () => switchTab(tab.dataset.tab));
     });
     
-    // Generate tab
+    // Generate tab - Manual QR
     document.getElementById('qr-input')?.addEventListener('input', updateCharCount);
-    document.getElementById('generate-btn')?.addEventListener('click', generateQR);
+    document.getElementById('generate-btn')?.addEventListener('click', generateManualQR);
+    
+    // Generate tab - Database search
     document.getElementById('db-search')?.addEventListener('input', handleDatabaseSearch);
     
-    // QR result actions
-    document.getElementById('download-png')?.addEventListener('click', downloadQR);
-    document.getElementById('copy-qr')?.addEventListener('click', copyQR);
-    document.getElementById('print-qr')?.addEventListener('click', printQR);
+    // Manual QR result actions
+    document.getElementById('download-png')?.addEventListener('click', () => downloadQR('manual'));
+    document.getElementById('copy-qr')?.addEventListener('click', () => copyQR('manual'));
+    document.getElementById('print-qr')?.addEventListener('click', () => printQR('manual'));
+    
+    // Database QR result actions
+    document.getElementById('db-download-png')?.addEventListener('click', () => downloadQR('db'));
+    document.getElementById('db-copy-qr')?.addEventListener('click', () => copyQR('db'));
+    document.getElementById('db-print-qr')?.addEventListener('click', () => printQR('db'));
+    
     document.getElementById('clear-history')?.addEventListener('click', clearHistory);
     
     // Scan tab
@@ -121,7 +130,7 @@ function applyTheme(theme) {
     if (btn) btn.textContent = theme === 'dark' ? '☀️' : '🌙';
 }
 
-// ========== QR GENERATION ==========
+// ========== MANUAL QR GENERATION ==========
 function updateCharCount() {
     const input = document.getElementById('qr-input');
     const count = document.getElementById('char-count');
@@ -131,9 +140,9 @@ function updateCharCount() {
     }
 }
 
-async function generateQR(textOverride) {
+async function generateManualQR() {
     const inputEl = document.getElementById('qr-input');
-    const input = typeof textOverride === 'string' ? textOverride : inputEl?.value.trim();
+    const input = inputEl?.value.trim();
     
     if (!input) {
         showToast('Please enter text or URL');
@@ -151,7 +160,7 @@ async function generateQR(textOverride) {
         const bgColor = document.getElementById('bg-color')?.value || '#ffffff';
         
         const qrDataUrl = await generateBasicQR(input, errorLevel, fgColor, bgColor);
-        displayQRResult(qrDataUrl, input);
+        displayManualQRResult(qrDataUrl, input);
         addToHistory(input);
         
     } catch (error) {
@@ -194,7 +203,7 @@ function generateBasicQR(text, errorLevel, fgColor, bgColor) {
     });
 }
 
-function displayQRResult(dataUrl, data) {
+function displayManualQRResult(dataUrl, data) {
     const resultDiv = document.getElementById('qr-result');
     const qrDisplay = document.getElementById('qr-display');
     const preview = document.getElementById('qr-data-preview');
@@ -206,27 +215,44 @@ function displayQRResult(dataUrl, data) {
     
     if (resultDiv) {
         resultDiv.classList.remove('hidden');
-        resultDiv.scrollIntoView({ behavior: 'smooth' });
+    }
+}
+
+// ========== DATABASE QR GENERATION ==========
+function displayDbQRResult(dataUrl, data) {
+    const resultDiv = document.getElementById('db-qr-result');
+    const qrDisplay = document.getElementById('db-qr-display');
+    const preview = document.getElementById('db-qr-data');
+    
+    if (qrDisplay) qrDisplay.innerHTML = `<img src="${dataUrl}" alt="QR Code">`;
+    if (preview) preview.textContent = data.length > 50 ? data.substring(0, 50) + '...' : data;
+    
+    AppState.currentDbQR = { dataUrl, data };
+    
+    if (resultDiv) {
+        resultDiv.classList.remove('hidden');
     }
 }
 
 // ========== QR ACTIONS ==========
-function downloadQR() {
-    if (!AppState.currentQR) return;
+function downloadQR(type) {
+    const qrData = type === 'db' ? AppState.currentDbQR : AppState.currentQR;
+    if (!qrData) return;
     
     const link = document.createElement('a');
     link.download = `qr-code-${Date.now()}.png`;
-    link.href = AppState.currentQR.dataUrl;
+    link.href = qrData.dataUrl;
     link.click();
     
     showToast('Downloaded!');
 }
 
-async function copyQR() {
-    if (!AppState.currentQR) return;
+async function copyQR(type) {
+    const qrData = type === 'db' ? AppState.currentDbQR : AppState.currentQR;
+    if (!qrData) return;
     
     try {
-        const response = await fetch(AppState.currentQR.dataUrl);
+        const response = await fetch(qrData.dataUrl);
         const blob = await response.blob();
         await navigator.clipboard.write([
             new ClipboardItem({ 'image/png': blob })
@@ -234,7 +260,7 @@ async function copyQR() {
         showToast('Copied to clipboard!');
     } catch (error) {
         try {
-            await navigator.clipboard.writeText(AppState.currentQR.data);
+            await navigator.clipboard.writeText(qrData.data);
             showToast('Copied text to clipboard!');
         } catch (e) {
             showToast('Copy failed');
@@ -242,8 +268,9 @@ async function copyQR() {
     }
 }
 
-function printQR() {
-    if (!AppState.currentQR) return;
+function printQR(type) {
+    const qrData = type === 'db' ? AppState.currentDbQR : AppState.currentQR;
+    if (!qrData) return;
     
     const printWindow = window.open('', '_blank');
     printWindow.document.write(`
@@ -258,8 +285,8 @@ function printQR() {
             </style>
         </head>
         <body>
-            <img src="${AppState.currentQR.dataUrl}" alt="QR Code" onload="setTimeout(() => window.print(), 100)">
-            <p>${escapeHtml(AppState.currentQR.data)}</p>
+            <img src="${qrData.dataUrl}" alt="QR Code" onload="setTimeout(() => window.print(), 100)">
+            <p>${escapeHtml(qrData.data)}</p>
         </body>
         </html>
     `);
@@ -324,7 +351,6 @@ async function initScanner() {
             ).join('');
         }
         
-        // Prefer back camera on mobile
         const backCamera = videoDevices.find(d => d.label.toLowerCase().includes('back'));
         const deviceId = backCamera ? backCamera.deviceId : (videoDevices[0]?.deviceId || null);
         
@@ -421,7 +447,6 @@ function handleScanResult(data) {
     displayScanResult(data);
     addToScanHistory(data);
     
-    // Visual feedback
     const overlay = document.querySelector('.scanner-overlay');
     if (overlay) {
         overlay.style.background = 'rgba(16, 185, 129, 0.3)';
@@ -430,7 +455,6 @@ function handleScanResult(data) {
         }, 200);
     }
     
-    // Vibrate on mobile
     if (navigator.vibrate) {
         navigator.vibrate(100);
     }
@@ -569,20 +593,6 @@ function setupDatabaseUpload() {
         return;
     }
     
-    // iOS FIX: Make file input cover the entire drop zone
-    fileInput.style.cssText = `
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        opacity: 0;
-        cursor: pointer;
-        z-index: 10;
-    `;
-    
-    dropZone.style.position = 'relative';
-    
     // Multiple event listeners for iOS compatibility
     fileInput.addEventListener('change', handleFileSelect);
     fileInput.addEventListener('input', handleFileSelect);
@@ -671,7 +681,6 @@ async function parseDatabase(content, fileName) {
     const delimiter = content.includes('\t') ? '\t' : ',';
     const data = [];
     
-    // Skip header, parse data
     for (let i = 1; i < lines.length; i++) {
         const parts = lines[i].split(delimiter).map(p => p.trim().replace(/^"|"$/g, ''));
         
@@ -779,14 +788,18 @@ async function loadDatabaseFromUrl() {
 }
 
 // ========================================
-// DATABASE SEARCH
+// DATABASE SEARCH - Results + QR under search bar
 // ========================================
 
 function handleDatabaseSearch(event) {
     const query = event.target.value.toLowerCase().trim();
     const resultsDiv = document.getElementById('search-results');
+    const qrResultDiv = document.getElementById('db-qr-result');
     
     if (!resultsDiv) return;
+    
+    // Hide QR result when searching again
+    if (qrResultDiv) qrResultDiv.classList.add('hidden');
     
     // Hide results if no query or no active database
     if (!query || !AppState.activeDbId) {
@@ -826,19 +839,23 @@ function handleDatabaseSearch(event) {
                 
                 console.log('Selected from database:', { id, label });
                 
+                // Hide search results
+                resultsDiv.classList.remove('visible');
+                
+                // Clear search input
+                const searchInput = document.getElementById('db-search');
+                if (searchInput) searchInput.value = '';
+                
                 try {
                     const errorLevel = document.getElementById('error-level')?.value || 'M';
                     const fgColor = document.getElementById('fg-color')?.value || '#000000';
                     const bgColor = document.getElementById('bg-color')?.value || '#ffffff';
                     
                     const qrDataUrl = await generateBasicQR(id, errorLevel, fgColor, bgColor);
-                    displayQRResult(qrDataUrl, id);
-                    addToHistory(id);
                     
-                    // Clear search
-                    const searchInput = document.getElementById('db-search');
-                    if (searchInput) searchInput.value = '';
-                    resultsDiv.classList.remove('visible');
+                    // Display QR right under the search bar
+                    displayDbQRResult(qrDataUrl, `${label} (${id})`);
+                    addToHistory(id);
                     
                 } catch (error) {
                     console.error('Error generating QR from database:', error);
@@ -910,7 +927,7 @@ function updateDatabaseUI() {
         }
     }
     
-    // Update active database info
+    // Update active database info and show/hide search
     if (AppState.activeDbId && AppState.databases[AppState.activeDbId]) {
         const activeDb = AppState.databases[AppState.activeDbId];
         
