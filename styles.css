@@ -184,6 +184,7 @@ body {
 /* ========== FORMS ========== */
 .form-group {
     margin-bottom: 16px;
+    position: relative;
 }
 
 .form-group label {
@@ -305,15 +306,20 @@ input[type="color"] {
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
-    margin-top: 16px;
 }
 
 .btn-group .btn {
     flex: 1;
-    min-width: 100px;
+    min-width: 80px;
 }
 
-/* ========== QR DISPLAY ========== */
+/* ========== QR DISPLAY - INLINE VERSION ========== */
+.qr-result-inline {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+}
+
 .qr-display {
     display: flex;
     justify-content: center;
@@ -327,6 +333,11 @@ input[type="color"] {
 .qr-display canvas {
     max-width: 100%;
     height: auto;
+    max-height: 280px;
+}
+
+.text-center {
+    text-align: center;
 }
 
 /* ========== SEARCH RESULTS ========== */
@@ -336,13 +347,14 @@ input[type="color"] {
     left: 0;
     right: 0;
     background: var(--bg-card);
-    border: 2px solid var(--border);
+    border: 2px solid var(--primary);
     border-top: none;
     border-radius: 0 0 var(--radius-sm) var(--radius-sm);
-    max-height: 200px;
+    max-height: 250px;
     overflow-y: auto;
     z-index: 50;
     display: none;
+    box-shadow: var(--shadow-lg);
 }
 
 .search-results.visible {
@@ -350,13 +362,14 @@ input[type="color"] {
 }
 
 .search-item {
-    padding: 12px 14px;
+    padding: 14px 16px;
     cursor: pointer;
     border-bottom: 1px solid var(--border);
     transition: background 0.2s;
 }
 
-.search-item:hover {
+.search-item:hover,
+.search-item:active {
     background: var(--bg-body);
 }
 
@@ -365,13 +378,15 @@ input[type="color"] {
 }
 
 .search-item-label {
-    font-weight: 500;
+    font-weight: 600;
     color: var(--text-primary);
+    font-size: 1rem;
 }
 
 .search-item-id {
     font-size: 0.8rem;
     color: var(--text-muted);
+    margin-top: 2px;
 }
 
 /* ========== HISTORY LIST ========== */
@@ -381,10 +396,11 @@ input[type="color"] {
     gap: 8px;
     max-height: 200px;
     overflow-y: auto;
+    margin-bottom: 12px;
 }
 
 .history-item {
-    padding: 10px 12px;
+    padding: 12px 14px;
     background: var(--bg-body);
     border-radius: var(--radius-sm);
     font-size: 0.875rem;
@@ -394,7 +410,8 @@ input[type="color"] {
     word-break: break-all;
 }
 
-.history-item:hover {
+.history-item:hover,
+.history-item:active {
     background: var(--border);
 }
 
@@ -458,12 +475,24 @@ input[type="color"] {
     text-align: center;
     transition: all 0.2s;
     cursor: pointer;
+    position: relative;
 }
 
 .upload-zone:hover,
 .upload-zone.dragover {
     border-color: var(--primary);
     background: rgba(37, 99, 235, 0.05);
+}
+
+.upload-zone input[type="file"] {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+    z-index: 10;
 }
 
 .upload-icon {
@@ -485,6 +514,7 @@ input[type="color"] {
     background: var(--bg-body);
     border-radius: var(--radius-sm);
     border: 2px solid transparent;
+    gap: 12px;
 }
 
 .db-item.active {
@@ -494,10 +524,14 @@ input[type="color"] {
 
 .db-item-info {
     flex: 1;
+    min-width: 0;
 }
 
 .db-item-name {
     font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .db-item-meta {
@@ -508,83 +542,8 @@ input[type="color"] {
 .db-item-actions {
     display: flex;
     gap: 8px;
-}
-
-/* ========== BATCH ========== */
-.batch-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-    gap: 12px;
-    max-height: 400px;
-    overflow-y: auto;
-    padding: 8px 0;
-}
-
-.batch-item {
-    text-align: center;
-}
-
-.batch-item img {
-    width: 100%;
-    height: auto;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border);
-}
-
-.batch-item-label {
-    font-size: 0.7rem;
-    color: var(--text-muted);
-    margin-top: 4px;
-    word-break: break-all;
-}
-
-.progress-bar {
-    width: 100%;
-    height: 8px;
-    background: var(--bg-body);
-    border-radius: 4px;
-    overflow: hidden;
-    margin-bottom: 8px;
-}
-
-.progress-fill {
-    height: 100%;
-    background: var(--primary);
-    width: 0%;
-    transition: width 0.3s;
-}
-
-.label-templates {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
-    margin-top: 8px;
-}
-
-.label-btn {
-    padding: 12px 8px;
-    background: var(--bg-body);
-    border: 2px solid var(--border);
-    border-radius: var(--radius-sm);
-    font-size: 0.8rem;
-    cursor: pointer;
-    transition: all 0.2s;
-    text-align: center;
-}
-
-.label-btn:hover {
-    border-color: var(--primary);
-}
-
-.label-btn.active {
-    border-color: var(--primary);
-    background: rgba(37, 99, 235, 0.1);
-}
-
-.label-btn small {
-    display: block;
-    color: var(--text-muted);
-    font-size: 0.7rem;
+    align-items: center;
+    flex-shrink: 0;
 }
 
 /* ========== UTILITIES ========== */
@@ -615,14 +574,6 @@ input[type="color"] {
     padding: 0 16px;
     color: var(--text-muted);
     font-size: 0.875rem;
-}
-
-.info-box {
-    padding: 12px;
-    background: rgba(37, 99, 235, 0.1);
-    border-radius: var(--radius-sm);
-    font-size: 0.875rem;
-    margin-top: 16px;
 }
 
 .status {
@@ -697,12 +648,15 @@ input[type="color"] {
         width: 100%;
     }
     
-    .label-templates {
-        grid-template-columns: 1fr 1fr;
+    .db-item {
+        flex-direction: column;
+        align-items: flex-start;
     }
     
-    .batch-grid {
-        grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    .db-item-actions {
+        width: 100%;
+        justify-content: flex-end;
+        margin-top: 8px;
     }
 }
 
@@ -714,5 +668,15 @@ input[type="color"] {
     
     .tab:active {
         background: var(--bg-body);
+    }
+    
+    .search-item:active {
+        background: var(--primary);
+        color: white;
+    }
+    
+    .search-item:active .search-item-label,
+    .search-item:active .search-item-id {
+        color: white;
     }
 }
