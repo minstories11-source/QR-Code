@@ -807,3 +807,17 @@ input[type="color"] {
 #add-entry-form input {
     width: 100%;
 }
+#show-add-entry {
+    margin: 16px 0;
+    position: relative;
+    z-index: 1;
+}
+
+#db-search-section {
+    position: relative;
+}
+
+.search-results-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
