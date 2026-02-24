@@ -821,3 +821,13 @@ input[type="color"] {
     max-height: 300px;
     overflow-y: auto;
 }
+
+#show-merge-modal {
+    position: relative;
+    z-index: 1;
+}
+
+.card {
+    position: relative;
+    overflow: visible;
+}
