@@ -11,8 +11,6 @@
     <!-- Libraries from CDN -->
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
-    <script src="https://unpkg.com/@nicolo-ribaudo/barcode-reader@0.1.0/dist/barcode-reader.umd.js"></script>
-
 </head>
 <body>
     
@@ -116,7 +114,7 @@
                     <div id="search-results" class="search-results-list"></div>
                 </div>
 
-                <!-- Add Entry Button - MOVED OUTSIDE THE CARD -->
+                <!-- Add Entry Button -->
                 <button id="show-add-entry" class="btn btn-secondary btn-block">
                     ➕ Add New Entry
                 </button>
@@ -145,7 +143,6 @@
             </div>
         </section>
 
-
         <!-- ========== SCAN TAB ========== -->
         <section id="scan-tab" class="tab-content">
             <div class="card">
@@ -164,6 +161,7 @@
                     <video id="scanner-video" autoplay playsinline muted></video>
                     <div class="scanner-overlay">
                         <div class="scanner-frame"></div>
+                        <div class="scanner-hint">Align QR code within frame</div>
                     </div>
                 </div>
 
@@ -236,10 +234,11 @@
                 <div class="form-group" style="margin-top: 12px;">
                     <label for="chunk-size-select">Transfer Mode</label>
                     <select id="chunk-size-select">
-                        <option value="500">📶 Reliable (more codes, easiest to scan)</option>
-                        <option value="800" selected>⚖️ Balanced (recommended)</option>
+                        <option value="400">🐢 Extra Safe (most codes, easiest)</option>
+                        <option value="600" selected>📶 Reliable (recommended)</option>
+                        <option value="800">⚖️ Balanced</option>
                         <option value="1200">🚀 Fast (fewer codes)</option>
-                        <option value="2000">⚡ Turbo (fewest codes, may struggle)</option>
+                        <option value="2000">⚡ Turbo (experimental)</option>
                     </select>
                 </div>
                 
@@ -364,7 +363,7 @@
 
     <!-- Footer -->
     <footer class="footer">
-        <p>QR Generator Pro</p>
+        <p>QR Generator Pro by jureczk</p>
     </footer>
 
     <!-- Toast -->
