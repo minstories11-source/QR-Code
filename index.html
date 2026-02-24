@@ -114,6 +114,21 @@
                     <div id="search-results" class="search-results-list"></div>
                 </div>
 
+                <!-- Add Entry Button -->
+                <button id="show-add-entry" class="btn btn-secondary btn-block" style="margin-bottom: 16px;">
+                    ➕ Add New Entry
+                </button>
+
+                <!-- Add Entry Form (hidden by default) -->
+                <div id="add-entry-form" class="card hidden">
+                    <h2>➕ Add New Entry</h2>
+                    <div id="entry-fields"></div>
+                    <div class="btn-group" style="margin-top: 16px;">
+                        <button id="save-entry" class="btn btn-primary">💾 Save</button>
+                        <button id="cancel-add-entry" class="btn btn-secondary">Cancel</button>
+                    </div>
+                </div>
+
                 <!-- QR Code Result -->
                 <div id="db-qr-result" class="card hidden">
                     <div id="db-qr-display" class="qr-display"></div>
@@ -168,7 +183,7 @@
                 </div>
             </div>
 
-            <!-- ========== CHAIN RECEIVE UI (NEW) ========== -->
+            <!-- Chain Receive UI (hidden by default) -->
             <div id="chain-receive-ui" class="card hidden">
                 <h2>📥 Receiving Transfer...</h2>
                 
@@ -210,7 +225,7 @@
         <!-- ========== SETTINGS TAB ========== -->
         <section id="settings-tab" class="tab-content">
             
-            <!-- ========== PHONE-TO-PHONE TRANSFER (NEW) ========== -->
+            <!-- Phone-to-Phone Transfer -->
             <div class="card">
                 <h2>📲 Phone-to-Phone Transfer</h2>
                 <p class="text-muted">Transfer database to another phone via QR codes - no internet needed!</p>
@@ -251,7 +266,7 @@
                         ✕ Stop Transfer
                     </button>
                 </div>
-
+            </div>
 
             <!-- Upload Database -->
             <div class="card">
@@ -284,6 +299,15 @@
                 </div>
             </div>
 
+            <!-- Merge Databases -->
+            <div class="card">
+                <h2>🔀 Merge Databases</h2>
+                <p class="text-muted">Combine another database into the active one (unique IDs only)</p>
+                <button id="show-merge-modal" class="btn btn-secondary btn-block" style="margin-top: 12px;">
+                    Merge Into Active Database
+                </button>
+            </div>
+
             <!-- Active Database Actions -->
             <div id="active-db-card" class="card hidden">
                 <h2>✓ Active Database</h2>
@@ -305,8 +329,25 @@
 
         </section>
 
-
     </main>
+
+    <!-- Merge Modal -->
+    <div id="merge-modal" class="modal hidden">
+        <div class="modal-content card">
+            <h2>🔀 Merge Databases</h2>
+            <p class="text-muted">Select a database to merge into the active one. Entries with duplicate IDs will be skipped.</p>
+            
+            <div class="form-group" style="margin-top: 16px;">
+                <label for="merge-source">Merge from:</label>
+                <select id="merge-source"></select>
+            </div>
+            
+            <div class="btn-group" style="margin-top: 16px;">
+                <button id="confirm-merge" class="btn btn-primary">🔀 Merge</button>
+                <button id="cancel-merge" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Footer -->
     <footer class="footer">
