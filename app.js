@@ -705,7 +705,7 @@ function generateFromScan() {
 // ========================================
 
 const CHAIN_PREFIX = 'QRP:1:';
-const CHUNK_SIZE = 100;
+const CHUNK_SIZE = 500;
 
 async function startChainTransfer() {
     if (!AppState.activeDbId) {
@@ -1477,5 +1477,6 @@ window.addEventListener('beforeunload', stopScanner);
 document.addEventListener('visibilitychange', () => { if (document.hidden) stopScanner(); });
 
 console.log('App loaded with Chain Transfer');
+
 
 
