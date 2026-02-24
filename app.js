@@ -1,6 +1,6 @@
 // ========================================
-// QR GENERATOR PRO - SAFARI FIXED
-// Database + Scanner for iOS Safari
+// QR GENERATOR PRO - WITH JSON IMPORT
+// Share databases between users
 // ========================================
 
 const AppState = {
@@ -25,48 +25,41 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadState();
     setupEventListeners();
     updateUI();
+    updateStorageInfo();
     console.log('Ready!');
 });
 
-// ========== STATE - SAFARI FIXED ==========
+// ========== STATE ==========
 async function loadState() {
     try {
-        // Check if localStorage is available
         if (!isLocalStorageAvailable()) {
-            console.warn('localStorage not available, using memory only');
+            console.warn('localStorage not available');
             return;
         }
         
         const saved = localStorage.getItem('qrGeneratorPro');
-        console.log('Raw saved data:', saved ? saved.substring(0, 100) + '...' : 'null');
         
         if (saved) {
             const parsed = JSON.parse(saved);
-            console.log('Parsed state:', {
-                dbCount: Object.keys(parsed.databases || {}).length,
-                activeDbId: parsed.activeDbId
-            });
-            
             AppState.databases = parsed.databases || {};
             AppState.activeDbId = parsed.activeDbId || null;
             AppState.history = parsed.history || [];
             AppState.scanHistory = parsed.scanHistory || [];
             AppState.theme = parsed.theme || 'light';
+            
+            console.log('Loaded:', Object.keys(AppState.databases).length, 'databases');
         }
         
         applyTheme(AppState.theme);
         
     } catch (e) {
-        console.error('Load state error:', e);
+        console.error('Load error:', e);
     }
 }
 
 function saveState() {
     try {
-        if (!isLocalStorageAvailable()) {
-            console.warn('Cannot save - localStorage not available');
-            return;
-        }
+        if (!isLocalStorageAvailable()) return;
         
         const data = {
             databases: AppState.databases,
@@ -76,41 +69,49 @@ function saveState() {
             theme: AppState.theme
         };
         
-        const json = JSON.stringify(data);
-        localStorage.setItem('qrGeneratorPro', json);
-        console.log('State saved, size:', json.length, 'bytes');
+        localStorage.setItem('qrGeneratorPro', JSON.stringify(data));
+        updateStorageInfo();
         
     } catch (e) {
-        console.error('Save state error:', e);
+        console.error('Save error:', e);
         
-        // If quota exceeded, try clearing old data
         if (e.name === 'QuotaExceededError') {
-            console.log('Storage quota exceeded, clearing history...');
-            AppState.history = AppState.history.slice(0, 5);
-            AppState.scanHistory = AppState.scanHistory.slice(0, 5);
-            try {
-                localStorage.setItem('qrGeneratorPro', JSON.stringify({
-                    databases: AppState.databases,
-                    activeDbId: AppState.activeDbId,
-                    history: AppState.history,
-                    scanHistory: AppState.scanHistory,
-                    theme: AppState.theme
-                }));
-            } catch (e2) {
-                console.error('Still cannot save:', e2);
-            }
+            showToast('Storage full! Try deleting old databases.');
         }
     }
 }
 
 function isLocalStorageAvailable() {
     try {
-        const test = '__storage_test__';
-        localStorage.setItem(test, test);
-        localStorage.removeItem(test);
+        localStorage.setItem('_test', '1');
+        localStorage.removeItem('_test');
         return true;
-    } catch (e) {
-        return false;
+    } catch { return false; }
+}
+
+function updateStorageInfo() {
+    const el = document.getElementById('storage-info');
+    if (!el) return;
+    
+    try {
+        const data = localStorage.getItem('qrGeneratorPro') || '';
+        const bytes = new Blob([data]).size;
+        const kb = (bytes / 1024).toFixed(1);
+        const mb = (bytes / (1024 * 1024)).toFixed(2);
+        
+        const dbCount = Object.keys(AppState.databases).length;
+        let totalRows = 0;
+        Object.values(AppState.databases).forEach(db => {
+            totalRows += db.rows || 0;
+        });
+        
+        el.innerHTML = `
+            <strong>${dbCount}</strong> database${dbCount !== 1 ? 's' : ''} • 
+            <strong>${totalRows}</strong> total entries<br>
+            Storage used: <strong>${bytes > 1024 * 1024 ? mb + ' MB' : kb + ' KB'}</strong>
+        `;
+    } catch {
+        el.textContent = 'Unable to calculate';
     }
 }
 
@@ -151,28 +152,21 @@ function setupEventListeners() {
     // Settings tab
     setupDatabaseUpload();
     document.getElementById('load-db-url')?.addEventListener('click', loadDatabaseFromUrl);
-    document.getElementById('export-db')?.addEventListener('click', exportDatabase);
+    document.getElementById('export-db')?.addEventListener('click', exportAsJSON);
+    document.getElementById('export-csv')?.addEventListener('click', exportAsCSV);
+    document.getElementById('clear-all-data')?.addEventListener('click', clearAllData);
 }
 
 // ========== TABS ==========
 function switchTab(tabName) {
-    console.log('Switching to:', tabName);
-    
     document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tabName));
     document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === `${tabName}-tab`));
     
-    if (tabName === 'database') {
-        updateDatabaseTab();
-    } else if (tabName === 'scan') {
-        showScannerUI();
-    } else if (tabName === 'settings') {
-        updateSettingsUI();
-    }
+    if (tabName === 'database') updateDatabaseTab();
+    else if (tabName === 'scan') showScannerUI();
+    else if (tabName === 'settings') updateSettingsUI();
     
-    // Stop scanner when leaving scan tab
-    if (tabName !== 'scan') {
-        stopScanner();
-    }
+    if (tabName !== 'scan') stopScanner();
 }
 
 // ========== THEME ==========
@@ -204,8 +198,6 @@ async function generateManualQR() {
     if (input.length > 2953) return showToast('Text too long');
     
     try {
-        showToast('Generating...');
-        
         const qrDataUrl = await generateBasicQR(
             input,
             document.getElementById('error-level')?.value || 'M',
@@ -221,7 +213,7 @@ async function generateManualQR() {
         addToHistory(input);
         
     } catch (e) {
-        console.error('QR generation error:', e);
+        console.error(e);
         showToast('Error generating QR');
     }
 }
@@ -234,35 +226,25 @@ function generateBasicQR(text, errorLevel, fgColor, bgColor) {
         
         try {
             new QRCode(container, {
-                text: text,
-                width: 300,
-                height: 300,
-                colorDark: fgColor,
-                colorLight: bgColor,
+                text, width: 300, height: 300,
+                colorDark: fgColor, colorLight: bgColor,
                 correctLevel: QRCode.CorrectLevel[errorLevel]
             });
             
             let attempts = 0;
-            const maxAttempts = 50;
-            
             const check = () => {
-                attempts++;
                 const canvas = container.querySelector('canvas');
-                
-                if (canvas && canvas.width > 0) {
-                    const url = canvas.toDataURL('image/png');
+                if (canvas?.width > 0) {
                     document.body.removeChild(container);
-                    resolve(url);
-                } else if (attempts < maxAttempts) {
+                    resolve(canvas.toDataURL('image/png'));
+                } else if (++attempts < 50) {
                     setTimeout(check, 50);
                 } else {
                     document.body.removeChild(container);
-                    reject(new Error('QR generation timeout'));
+                    reject(new Error('Timeout'));
                 }
             };
-            
             setTimeout(check, 50);
-            
         } catch (e) {
             document.body.removeChild(container);
             reject(e);
@@ -275,14 +257,12 @@ function downloadQR(type) {
     const qr = type === 'db' ? AppState.currentDbQR : AppState.currentQR;
     if (!qr) return;
     
-    // Safari-friendly download
-    const link = document.createElement('a');
-    link.download = `qr-${Date.now()}.png`;
-    link.href = qr.dataUrl;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
+    const a = document.createElement('a');
+    a.download = `qr-${Date.now()}.png`;
+    a.href = qr.dataUrl;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
     showToast('Downloaded!');
 }
 
@@ -291,30 +271,19 @@ async function copyQR(type) {
     if (!qr) return;
     
     try {
-        // Try clipboard API first
-        if (navigator.clipboard && navigator.clipboard.write) {
+        if (navigator.clipboard?.write) {
             const blob = await (await fetch(qr.dataUrl)).blob();
             await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
             showToast('Image copied!');
             return;
         }
-    } catch (e) {
-        console.log('Clipboard image copy failed:', e);
-    }
+    } catch {}
     
-    // Fallback: copy text
     try {
         await navigator.clipboard.writeText(qr.data);
         showToast('Text copied!');
-    } catch (e) {
-        // Final fallback
-        const textarea = document.createElement('textarea');
-        textarea.value = qr.data;
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
-        showToast('Copied!');
+    } catch {
+        showToast('Copy failed');
     }
 }
 
@@ -323,27 +292,11 @@ function printQR(type) {
     if (!qr) return;
     
     const w = window.open('', '_blank');
-    if (!w) {
-        showToast('Please allow popups');
-        return;
-    }
+    if (!w) return showToast('Allow popups');
     
-    w.document.write(`
-        <!DOCTYPE html>
-        <html>
-        <head><title>Print QR</title>
-        <style>
-            body { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; margin:0; font-family:Arial,sans-serif; }
-            img { max-width:80%; max-height:60vh; }
-            p { margin-top:20px; color:#666; word-break:break-all; text-align:center; max-width:80%; }
-        </style>
-        </head>
-        <body>
-        <img src="${qr.dataUrl}" onload="setTimeout(function(){window.print();},500)">
-        <p>${escapeHtml(qr.data)}</p>
-        </body>
-        </html>
-    `);
+    w.document.write(`<!DOCTYPE html><html><head><title>Print</title>
+        <style>body{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;margin:0;font-family:Arial}img{max-width:80%}p{margin-top:20px;color:#666;word-break:break-all;text-align:center;max-width:80%}</style>
+        </head><body><img src="${qr.dataUrl}" onload="setTimeout(()=>window.print(),500)"><p>${escapeHtml(qr.data)}</p></body></html>`);
     w.document.close();
 }
 
@@ -385,30 +338,18 @@ function updateHistoryUI() {
 
 // ========== DATABASE TAB ==========
 function updateDatabaseTab() {
-    console.log('updateDatabaseTab called');
-    console.log('activeDbId:', AppState.activeDbId);
-    console.log('databases:', Object.keys(AppState.databases));
-    
     const hasDb = !!(AppState.activeDbId && AppState.databases[AppState.activeDbId]);
-    console.log('hasDb:', hasDb);
     
     const noDbMsg = document.getElementById('no-db-message');
     const searchSection = document.getElementById('db-search-section');
     
-    if (noDbMsg) {
-        noDbMsg.style.display = hasDb ? 'none' : 'block';
-    }
-    
-    if (searchSection) {
-        searchSection.style.display = hasDb ? 'block' : 'none';
-    }
+    if (noDbMsg) noDbMsg.style.display = hasDb ? 'none' : 'block';
+    if (searchSection) searchSection.style.display = hasDb ? 'block' : 'none';
     
     if (hasDb) {
         const db = AppState.databases[AppState.activeDbId];
-        const infoText = document.getElementById('db-info-text');
-        if (infoText) {
-            infoText.textContent = `${db.name} • ${db.rows} items`;
-        }
+        const info = document.getElementById('db-info-text');
+        if (info) info.textContent = `${db.name} • ${db.rows} items`;
     }
 }
 
@@ -459,58 +400,44 @@ function clearSearch() {
     const results = document.getElementById('search-results');
     if (results) results.innerHTML = '';
     
-    const clearBtn = document.getElementById('clear-search');
-    if (clearBtn) clearBtn.style.display = 'none';
-    
-    const qrResult = document.getElementById('db-qr-result');
-    if (qrResult) qrResult.style.display = 'none';
+    document.getElementById('clear-search').style.display = 'none';
+    document.getElementById('db-qr-result').style.display = 'none';
 }
 
 async function selectDatabaseItem(id, label) {
     clearSearch();
     
     try {
-        showToast('Generating QR...');
-        
         const qrDataUrl = await generateBasicQR(id, 'M', '#000000', '#ffffff');
         
-        const display = document.getElementById('db-qr-display');
-        const labelEl = document.getElementById('db-qr-label');
-        const idEl = document.getElementById('db-qr-id');
-        const result = document.getElementById('db-qr-result');
-        
-        if (display) display.innerHTML = `<img src="${qrDataUrl}" alt="QR">`;
-        if (labelEl) labelEl.textContent = label;
-        if (idEl) idEl.textContent = `ID: ${id}`;
-        if (result) result.style.display = 'block';
+        document.getElementById('db-qr-display').innerHTML = `<img src="${qrDataUrl}" alt="QR">`;
+        document.getElementById('db-qr-label').textContent = label;
+        document.getElementById('db-qr-id').textContent = `ID: ${id}`;
+        document.getElementById('db-qr-result').style.display = 'block';
         
         AppState.currentDbQR = { dataUrl: qrDataUrl, data: id, label };
         addToHistory(id);
         
-        result?.scrollIntoView({ behavior: 'smooth' });
+        document.getElementById('db-qr-result').scrollIntoView({ behavior: 'smooth' });
         
     } catch (e) {
-        console.error('Error:', e);
+        console.error(e);
         showToast('Error generating QR');
     }
 }
 
-// ========================================
-// SCANNER - SAFARI/iOS COMPATIBLE
-// ========================================
-
+// ========== SCANNER ==========
 function showScannerUI() {
     const startBtn = document.getElementById('start-scanner-btn');
     const statusEl = document.getElementById('scanner-status');
     
     if (AppState.scanner.scanning) {
         if (startBtn) startBtn.style.display = 'none';
-        if (statusEl) statusEl.textContent = 'Camera active';
         return;
     }
     
     if (startBtn) startBtn.style.display = 'block';
-    if (statusEl) statusEl.textContent = 'Tap button to start camera';
+    if (statusEl) statusEl.textContent = 'Tap to start camera';
 }
 
 async function requestCameraPermission() {
@@ -518,288 +445,144 @@ async function requestCameraPermission() {
     const statusEl = document.getElementById('scanner-status');
     
     if (startBtn) startBtn.style.display = 'none';
-    if (statusEl) statusEl.textContent = 'Requesting camera access...';
+    if (statusEl) statusEl.textContent = 'Requesting camera...';
     
     try {
-        // Check support
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            throw new Error('Camera not supported in this browser. Try Chrome or Safari.');
+        if (!navigator.mediaDevices?.getUserMedia) {
+            throw new Error('Camera not supported');
         }
         
-        // First request permission with simple constraints
-        console.log('Requesting camera permission...');
-        
-        const testStream = await navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: 'environment' },
-            audio: false 
-        });
-        
-        // Got permission, stop test stream
+        const testStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
         testStream.getTracks().forEach(t => t.stop());
-        console.log('Permission granted');
         
-        // Now enumerate devices
         const devices = await navigator.mediaDevices.enumerateDevices();
         const videoDevices = devices.filter(d => d.kind === 'videoinput');
-        console.log('Found cameras:', videoDevices.length);
         
-        if (videoDevices.length === 0) {
-            throw new Error('No camera found');
-        }
-        
-        // Update selector
         const selector = document.getElementById('camera-select');
         if (selector) {
-            selector.innerHTML = videoDevices.map((d, i) => {
-                const label = d.label || `Camera ${i + 1}`;
-                return `<option value="${d.deviceId}">${label}</option>`;
-            }).join('');
+            selector.innerHTML = videoDevices.map((d, i) => 
+                `<option value="${d.deviceId}">${d.label || `Camera ${i + 1}`}</option>`
+            ).join('');
         }
         
-        // Find back camera
-        const backCamera = videoDevices.find(d => {
-            const label = d.label.toLowerCase();
-            return label.includes('back') || label.includes('rear') || label.includes('environment');
-        });
-        
-        // Start with preferred camera
-        await startScanner(backCamera?.deviceId || videoDevices[0]?.deviceId);
+        const backCam = videoDevices.find(d => /back|rear|environment/i.test(d.label));
+        await startScanner(backCam?.deviceId || videoDevices[0]?.deviceId);
         
     } catch (e) {
-        console.error('Camera error:', e);
-        
-        let msg = e.message || 'Camera error';
-        
-        if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
-            msg = 'Camera permission denied. Please allow camera access in your browser settings.';
-        } else if (e.name === 'NotFoundError') {
-            msg = 'No camera found on this device.';
-        } else if (e.name === 'NotReadableError' || e.name === 'TrackStartError') {
-            msg = 'Camera is busy. Close other apps using the camera.';
-        } else if (e.name === 'OverconstrainedError') {
-            msg = 'Camera not compatible. Trying alternative...';
-            // Try again with simpler constraints
-            try {
-                await startScannerSimple();
-                return;
-            } catch (e2) {
-                msg = 'Camera not compatible with this browser.';
-            }
-        }
-        
+        console.error(e);
+        let msg = e.message;
+        if (e.name === 'NotAllowedError') msg = 'Camera permission denied';
         if (statusEl) statusEl.textContent = msg;
         if (startBtn) startBtn.style.display = 'block';
         showToast(msg);
     }
 }
 
-async function startScannerSimple() {
-    // Fallback with minimal constraints
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    await setupVideoStream(stream);
-}
-
 async function startScanner(deviceId) {
     const statusEl = document.getElementById('scanner-status');
     
     try {
-        if (statusEl) statusEl.textContent = 'Starting camera...';
-        
-        // Stop existing stream
         if (AppState.scanner.stream) {
             AppState.scanner.stream.getTracks().forEach(t => t.stop());
-            AppState.scanner.stream = null;
         }
         
-        // Safari-friendly constraints
-        const constraints = {
-            video: {
-                width: { ideal: 1280 },
-                height: { ideal: 720 }
-            },
-            audio: false
-        };
-        
-        if (deviceId) {
-            constraints.video.deviceId = { exact: deviceId };
-        } else {
-            constraints.video.facingMode = { ideal: 'environment' };
-        }
-        
-        console.log('Starting camera with:', JSON.stringify(constraints));
+        const constraints = { video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false };
+        if (deviceId) constraints.video.deviceId = { exact: deviceId };
+        else constraints.video.facingMode = { ideal: 'environment' };
         
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
-        await setupVideoStream(stream);
+        AppState.scanner.stream = stream;
+        
+        const video = document.getElementById('scanner-video');
+        video.srcObject = stream;
+        video.setAttribute('playsinline', '');
+        video.muted = true;
+        
+        await new Promise((res, rej) => {
+            video.onloadedmetadata = res;
+            video.onerror = rej;
+            setTimeout(() => rej(new Error('Timeout')), 10000);
+        });
+        
+        await video.play();
+        
+        if (statusEl) statusEl.textContent = '';
+        document.getElementById('start-scanner-btn').style.display = 'none';
+        
+        AppState.scanner.scanning = true;
+        startScanLoop();
         
     } catch (e) {
-        console.error('startScanner error:', e);
         throw e;
     }
 }
 
-async function setupVideoStream(stream) {
-    const video = document.getElementById('scanner-video');
-    const statusEl = document.getElementById('scanner-status');
-    const startBtn = document.getElementById('start-scanner-btn');
-    
-    if (!video) throw new Error('Video element not found');
-    
-    AppState.scanner.stream = stream;
-    
-    // Safari needs these attributes
-    video.setAttribute('autoplay', '');
-    video.setAttribute('playsinline', '');
-    video.setAttribute('muted', '');
-    video.muted = true;
-    
-    video.srcObject = stream;
-    
-    // Wait for video to be ready
-    await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Video timeout')), 10000);
-        
-        video.onloadedmetadata = () => {
-            clearTimeout(timeout);
-            console.log('Video ready:', video.videoWidth, 'x', video.videoHeight);
-            resolve();
-        };
-        
-        video.onerror = () => {
-            clearTimeout(timeout);
-            reject(new Error('Video error'));
-        };
-    });
-    
-    // Play video (required for Safari)
-    try {
-        await video.play();
-        console.log('Video playing');
-    } catch (e) {
-        console.error('Video play error:', e);
-        throw new Error('Could not start video. Please try again.');
-    }
-    
-    if (statusEl) statusEl.textContent = '';
-    if (startBtn) startBtn.style.display = 'none';
-    
-    // Start scanning
-    AppState.scanner.scanning = true;
-    startScanLoop();
-}
-
 function switchCamera(e) {
-    if (e.target.value) {
-        startScanner(e.target.value);
-    }
+    if (e.target.value) startScanner(e.target.value);
 }
 
 function startScanLoop() {
     const video = document.getElementById('scanner-video');
-    if (!video) return;
-    
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    
     let lastScan = 0;
     
     function scan() {
         if (!AppState.scanner.scanning) return;
         
         const now = Date.now();
-        
-        // Scan every 250ms
-        if (now - lastScan >= 250 && video.readyState >= 2 && video.videoWidth > 0) {
+        if (now - lastScan >= 250 && video.readyState >= 2 && video.videoWidth) {
             lastScan = now;
-            
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
             ctx.drawImage(video, 0, 0);
             
             try {
                 const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                const code = jsQR(imageData.data, imageData.width, imageData.height, {
-                    inversionAttempts: 'dontInvert'
-                });
-                
-                if (code?.data) {
-                    handleScanResult(code.data);
-                }
-            } catch (e) {
-                // Ignore scan errors
-            }
+                const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
+                if (code?.data) handleScanResult(code.data);
+            } catch {}
         }
         
         AppState.scanner.animationId = requestAnimationFrame(scan);
     }
-    
-    console.log('Scan loop started');
     scan();
 }
 
 function stopScanner() {
     AppState.scanner.scanning = false;
-    
-    if (AppState.scanner.animationId) {
-        cancelAnimationFrame(AppState.scanner.animationId);
-        AppState.scanner.animationId = null;
-    }
-    
+    if (AppState.scanner.animationId) cancelAnimationFrame(AppState.scanner.animationId);
     if (AppState.scanner.stream) {
-        AppState.scanner.stream.getTracks().forEach(t => {
-            t.stop();
-            console.log('Track stopped');
-        });
+        AppState.scanner.stream.getTracks().forEach(t => t.stop());
         AppState.scanner.stream = null;
     }
-    
     const video = document.getElementById('scanner-video');
     if (video) video.srcObject = null;
 }
 
-let lastScannedData = '';
-let lastScanTime = 0;
+let lastScanned = '', lastScanTime = 0;
 
 function handleScanResult(data) {
-    const now = Date.now();
+    if (data === lastScanned && Date.now() - lastScanTime < 2000) return;
+    lastScanned = data;
+    lastScanTime = Date.now();
     
-    // Prevent duplicate scans within 2 seconds
-    if (data === lastScannedData && now - lastScanTime < 2000) {
-        return;
-    }
-    
-    lastScannedData = data;
-    lastScanTime = now;
-    
-    console.log('Scanned:', data);
-    
-    // Update UI
-    const scanDataEl = document.getElementById('scan-data');
-    const scanResult = document.getElementById('scan-result');
-    
-    if (scanDataEl) scanDataEl.textContent = data;
-    if (scanResult) scanResult.style.display = 'block';
-    
+    document.getElementById('scan-data').textContent = data;
+    document.getElementById('scan-result').style.display = 'block';
     AppState.currentScan = data;
     
-    // Save to history
     AppState.scanHistory = [data, ...AppState.scanHistory.filter(i => i !== data)].slice(0, 20);
     saveState();
     updateScanHistoryUI();
     
-    // Visual feedback
     const overlay = document.querySelector('.scanner-overlay');
     if (overlay) {
-        overlay.style.background = 'rgba(16, 185, 129, 0.5)';
-        setTimeout(() => { overlay.style.background = 'transparent'; }, 300);
+        overlay.style.background = 'rgba(16,185,129,0.5)';
+        setTimeout(() => overlay.style.background = 'transparent', 300);
     }
     
-    // Vibrate
-    if (navigator.vibrate) {
-        navigator.vibrate([100]);
-    }
-    
-    // Scroll to result
-    scanResult?.scrollIntoView({ behavior: 'smooth' });
+    navigator.vibrate?.([100]);
+    document.getElementById('scan-result')?.scrollIntoView({ behavior: 'smooth' });
 }
 
 async function scanFromImage(e) {
@@ -807,20 +590,18 @@ async function scanFromImage(e) {
     if (!file) return;
     
     try {
-        showToast('Scanning image...');
-        
-        const dataUrl = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
+        const dataUrl = await new Promise((res, rej) => {
+            const r = new FileReader();
+            r.onload = () => res(r.result);
+            r.onerror = rej;
+            r.readAsDataURL(file);
         });
         
-        const img = await new Promise((resolve, reject) => {
-            const image = new Image();
-            image.onload = () => resolve(image);
-            image.onerror = reject;
-            image.src = dataUrl;
+        const img = await new Promise((res, rej) => {
+            const i = new Image();
+            i.onload = () => res(i);
+            i.onerror = rej;
+            i.src = dataUrl;
         });
         
         const canvas = document.createElement('canvas');
@@ -832,16 +613,10 @@ async function scanFromImage(e) {
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const code = jsQR(imageData.data, imageData.width, imageData.height);
         
-        if (code?.data) {
-            handleScanResult(code.data);
-        } else {
-            showToast('No QR code found in image');
-        }
+        if (code?.data) handleScanResult(code.data);
+        else showToast('No QR found');
         
-    } catch (err) {
-        console.error('Image scan error:', err);
-        showToast('Error reading image');
-    }
+    } catch { showToast('Error reading image'); }
     
     e.target.value = '';
 }
@@ -870,24 +645,16 @@ function updateScanHistoryUI() {
 
 async function copyScanResult() {
     if (!AppState.currentScan) return;
-    
     try {
         await navigator.clipboard.writeText(AppState.currentScan);
         showToast('Copied!');
     } catch {
-        const textarea = document.createElement('textarea');
-        textarea.value = AppState.currentScan;
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textarea);
-        showToast('Copied!');
+        showToast('Copy failed');
     }
 }
 
 function openScannedUrl() {
     if (!AppState.currentScan) return;
-    
     try {
         new URL(AppState.currentScan);
         window.open(AppState.currentScan, '_blank');
@@ -904,7 +671,7 @@ function generateFromScan() {
 }
 
 // ========================================
-// SETTINGS - DATABASE UPLOAD (SAFARI FIXED)
+// DATABASE IMPORT/EXPORT - JSON + CSV
 // ========================================
 
 function setupDatabaseUpload() {
@@ -913,41 +680,31 @@ function setupDatabaseUpload() {
     
     if (!fileInput) return;
     
-    // Multiple listeners for Safari compatibility
-    ['change', 'input'].forEach(event => {
-        fileInput.addEventListener(event, handleFileSelect);
+    ['change', 'input'].forEach(evt => {
+        fileInput.addEventListener(evt, handleFileSelect);
     });
     
     if (dropZone) {
-        // Make entire zone clickable
-        dropZone.addEventListener('click', (e) => {
-            if (e.target !== fileInput) {
-                fileInput.click();
-            }
+        dropZone.addEventListener('click', e => {
+            if (e.target !== fileInput) fileInput.click();
         });
         
-        // Touch support
-        dropZone.addEventListener('touchend', (e) => {
+        dropZone.addEventListener('touchend', e => {
             e.preventDefault();
             fileInput.click();
         });
         
-        // Drag and drop
-        dropZone.addEventListener('dragover', (e) => {
+        dropZone.addEventListener('dragover', e => {
             e.preventDefault();
             dropZone.classList.add('dragover');
         });
         
-        dropZone.addEventListener('dragleave', () => {
-            dropZone.classList.remove('dragover');
-        });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
         
-        dropZone.addEventListener('drop', (e) => {
+        dropZone.addEventListener('drop', e => {
             e.preventDefault();
             dropZone.classList.remove('dragover');
-            if (e.dataTransfer?.files?.[0]) {
-                processFile(e.dataTransfer.files[0]);
-            }
+            if (e.dataTransfer?.files?.[0]) processFile(e.dataTransfer.files[0]);
         });
     }
 }
@@ -956,14 +713,14 @@ function handleFileSelect(e) {
     const file = e.target?.files?.[0];
     if (file) {
         processFile(file);
-        setTimeout(() => { e.target.value = ''; }, 100);
+        setTimeout(() => e.target.value = '', 100);
     }
 }
 
 async function processFile(file) {
-    console.log('Processing file:', file.name);
-    
     const status = document.getElementById('upload-status');
+    const fileName = file.name.toLowerCase();
+    
     if (status) {
         status.className = 'status';
         status.textContent = '📖 Reading file...';
@@ -974,21 +731,26 @@ async function processFile(file) {
         const text = await file.text();
         const name = file.name.replace(/\.[^/.]+$/, '');
         
-        console.log('File content length:', text.length);
+        let result;
         
-        const result = await parseDatabase(text, name);
+        // Detect file type
+        if (fileName.endsWith('.json')) {
+            result = await importJSON(text, name);
+        } else {
+            result = await parseCSV(text, name);
+        }
         
         if (status) {
             status.className = 'status success';
-            status.textContent = `✓ Loaded ${result.rows} items from ${name}`;
+            status.textContent = `✓ Imported ${result.rows} items from "${result.name}"`;
         }
         
-        showToast(`Loaded ${result.rows} items`);
+        showToast(`Imported ${result.rows} items`);
         updateSettingsUI();
         updateDatabaseTab();
         
     } catch (err) {
-        console.error('File processing error:', err);
+        console.error('Import error:', err);
         if (status) {
             status.className = 'status error';
             status.textContent = `❌ ${err.message}`;
@@ -997,33 +759,59 @@ async function processFile(file) {
     }
 }
 
-async function parseDatabase(content, name) {
-    const lines = content.split('\n').filter(l => l.trim());
+// ========== JSON IMPORT ==========
+async function importJSON(text, defaultName) {
+    let json;
     
-    if (lines.length < 2) {
-        throw new Error('File needs at least a header and one data row');
+    try {
+        json = JSON.parse(text);
+    } catch {
+        throw new Error('Invalid JSON file');
     }
     
-    const delim = content.includes('\t') ? '\t' : ',';
-    const data = [];
+    let data = [];
+    let name = defaultName;
     
-    for (let i = 1; i < lines.length; i++) {
-        const parts = lines[i].split(delim).map(p => p.trim().replace(/^"|"$/g, ''));
-        
-        if (parts.length >= 2 && parts[0] && parts[1]) {
-            data.push({
-                label: parts[0],
-                id: parts[1],
-                displayText: parts[2] || ''
-            });
-        }
+    // Handle different JSON formats
+    
+    // Format 1: Direct array of items
+    // [{"label": "...", "id": "..."}, ...]
+    if (Array.isArray(json)) {
+        data = json.map(item => normalizeItem(item));
     }
+    
+    // Format 2: Object with data array (our export format)
+    // {"name": "...", "data": [...], "rows": ...}
+    else if (json.data && Array.isArray(json.data)) {
+        name = json.name || defaultName;
+        data = json.data.map(item => normalizeItem(item));
+    }
+    
+    // Format 3: Object with items array
+    // {"items": [...]}
+    else if (json.items && Array.isArray(json.items)) {
+        data = json.items.map(item => normalizeItem(item));
+    }
+    
+    // Format 4: Object with entries array
+    // {"entries": [...]}
+    else if (json.entries && Array.isArray(json.entries)) {
+        data = json.entries.map(item => normalizeItem(item));
+    }
+    
+    else {
+        throw new Error('Unrecognized JSON format. Expected array or object with data/items/entries array.');
+    }
+    
+    // Filter out invalid entries
+    data = data.filter(item => item.label && item.id);
     
     if (data.length === 0) {
-        throw new Error('No valid data found. Format: Label,ID,Description');
+        throw new Error('No valid entries found. Each item needs "label" and "id" fields.');
     }
     
-    const dbId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+    // Save to state
+    const dbId = generateId();
     
     AppState.databases[dbId] = {
         name: name,
@@ -1035,11 +823,148 @@ async function parseDatabase(content, name) {
     AppState.activeDbId = dbId;
     saveState();
     
-    console.log('Database saved:', dbId, data.length, 'rows');
+    console.log('JSON imported:', name, data.length, 'items');
     
-    return { rows: data.length };
+    return { rows: data.length, name: name };
 }
 
+function normalizeItem(item) {
+    return {
+        label: item.label || item.name || item.title || item.Label || item.Name || '',
+        id: item.id || item.code || item.ID || item.Code || item.Id || '',
+        displayText: item.displayText || item.description || item.desc || item.DisplayText || item.Description || ''
+    };
+}
+
+// ========== CSV IMPORT ==========
+async function parseCSV(content, name) {
+    const lines = content.split('\n').filter(l => l.trim());
+    
+    if (lines.length < 2) {
+        throw new Error('File needs header row + at least 1 data row');
+    }
+    
+    const delim = content.includes('\t') ? '\t' : ',';
+    const data = [];
+    
+    for (let i = 1; i < lines.length; i++) {
+        const parts = parseCSVLine(lines[i], delim);
+        
+        if (parts.length >= 2 && parts[0] && parts[1]) {
+            data.push({
+                label: parts[0],
+                id: parts[1],
+                displayText: parts[2] || ''
+            });
+        }
+    }
+    
+    if (data.length === 0) {
+        throw new Error('No valid data. Format: Label,ID,Description');
+    }
+    
+    const dbId = generateId();
+    
+    AppState.databases[dbId] = {
+        name: name,
+        data: data,
+        created: Date.now(),
+        rows: data.length
+    };
+    
+    AppState.activeDbId = dbId;
+    saveState();
+    
+    return { rows: data.length, name: name };
+}
+
+function parseCSVLine(line, delim) {
+    // Handle quoted fields
+    const parts = [];
+    let current = '';
+    let inQuotes = false;
+    
+    for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        
+        if (char === '"') {
+            inQuotes = !inQuotes;
+        } else if (char === delim && !inQuotes) {
+            parts.push(current.trim().replace(/^"|"$/g, ''));
+            current = '';
+        } else {
+            current += char;
+        }
+    }
+    
+    parts.push(current.trim().replace(/^"|"$/g, ''));
+    
+    return parts;
+}
+
+// ========== EXPORT FUNCTIONS ==========
+function exportAsJSON() {
+    if (!AppState.activeDbId) return showToast('No database selected');
+    
+    const db = AppState.databases[AppState.activeDbId];
+    
+    // Export full database object (can be re-imported)
+    const exportData = {
+        name: db.name,
+        exported: new Date().toISOString(),
+        rows: db.data.length,
+        data: db.data
+    };
+    
+    const json = JSON.stringify(exportData, null, 2);
+    downloadFile(json, `${db.name}.json`, 'application/json');
+    
+    showToast('JSON exported - can be shared & imported');
+}
+
+function exportAsCSV() {
+    if (!AppState.activeDbId) return showToast('No database selected');
+    
+    const db = AppState.databases[AppState.activeDbId];
+    
+    // Create CSV with header
+    let csv = 'Label,ID,Description\n';
+    
+    db.data.forEach(item => {
+        const label = escapeCSV(item.label);
+        const id = escapeCSV(item.id);
+        const desc = escapeCSV(item.displayText || '');
+        csv += `${label},${id},${desc}\n`;
+    });
+    
+    downloadFile(csv, `${db.name}.csv`, 'text/csv');
+    
+    showToast('CSV exported');
+}
+
+function escapeCSV(str) {
+    if (!str) return '';
+    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return '"' + str.replace(/"/g, '""') + '"';
+    }
+    return str;
+}
+
+function downloadFile(content, filename, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    
+    URL.revokeObjectURL(url);
+}
+
+// ========== LOAD FROM URL ==========
 async function loadDatabaseFromUrl() {
     const url = document.getElementById('db-url')?.value.trim();
     if (!url) return showToast('Enter a URL');
@@ -1058,39 +983,15 @@ async function loadDatabaseFromUrl() {
         const text = await res.text();
         const name = url.split('/').pop()?.replace(/\.[^/.]+$/, '') || 'imported';
         
-        // Try JSON
-        try {
-            const json = JSON.parse(text);
-            if (Array.isArray(json)) {
-                const dbId = Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
-                
-                AppState.databases[dbId] = {
-                    name: name,
-                    data: json.map(item => ({
-                        label: item.label || item.name || '',
-                        id: item.id || item.code || '',
-                        displayText: item.displayText || item.description || ''
-                    })),
-                    created: Date.now(),
-                    rows: json.length
-                };
-                
-                AppState.activeDbId = dbId;
-                saveState();
-                
-                if (status) {
-                    status.className = 'status success';
-                    status.textContent = `✓ Loaded ${json.length} items`;
-                }
-                
-                updateSettingsUI();
-                updateDatabaseTab();
-                return;
-            }
-        } catch {}
+        let result;
         
-        // Try CSV
-        const result = await parseDatabase(text, name);
+        // Try JSON first
+        try {
+            result = await importJSON(text, name);
+        } catch {
+            // Try CSV
+            result = await parseCSV(text, name);
+        }
         
         if (status) {
             status.className = 'status success';
@@ -1101,7 +1002,7 @@ async function loadDatabaseFromUrl() {
         updateDatabaseTab();
         
     } catch (err) {
-        console.error('URL error:', err);
+        console.error(err);
         if (status) {
             status.className = 'status error';
             status.textContent = `❌ ${err.message}`;
@@ -1109,6 +1010,7 @@ async function loadDatabaseFromUrl() {
     }
 }
 
+// ========== SETTINGS UI ==========
 function updateSettingsUI() {
     const list = document.getElementById('db-list');
     const activeCard = document.getElementById('active-db-card');
@@ -1125,15 +1027,17 @@ function updateSettingsUI() {
     list.innerHTML = keys.map(id => {
         const db = AppState.databases[id];
         const isActive = id === AppState.activeDbId;
+        const date = new Date(db.created).toLocaleDateString();
+        
         return `
             <div class="db-item ${isActive ? 'active' : ''}" data-id="${id}">
                 <div class="db-item-info">
                     <div class="db-item-name">${escapeHtml(db.name)}</div>
-                    <div class="db-item-meta">${db.rows} items</div>
+                    <div class="db-item-meta">${db.rows} items • ${date}</div>
                 </div>
                 <div class="db-item-actions">
                     ${isActive 
-                        ? '<span style="color:var(--success)">✓</span>' 
+                        ? '<span style="color:var(--success)">✓ Active</span>' 
                         : `<button class="btn btn-small btn-secondary activate-db" data-id="${id}">Use</button>`}
                     <button class="btn btn-small btn-danger delete-db" data-id="${id}">×</button>
                 </div>
@@ -1142,20 +1046,21 @@ function updateSettingsUI() {
     }).join('');
     
     list.querySelectorAll('.activate-db').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+        btn.addEventListener('click', e => {
             e.stopPropagation();
             AppState.activeDbId = btn.dataset.id;
             saveState();
             updateSettingsUI();
             updateDatabaseTab();
-            showToast('Database activated');
+            showToast('Activated');
         });
     });
     
     list.querySelectorAll('.delete-db').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+        btn.addEventListener('click', e => {
             e.stopPropagation();
-            if (!confirm('Delete?')) return;
+            const db = AppState.databases[btn.dataset.id];
+            if (!confirm(`Delete "${db.name}"?`)) return;
             
             delete AppState.databases[btn.dataset.id];
             if (AppState.activeDbId === btn.dataset.id) {
@@ -1171,29 +1076,28 @@ function updateSettingsUI() {
     if (AppState.activeDbId && AppState.databases[AppState.activeDbId]) {
         const db = AppState.databases[AppState.activeDbId];
         document.getElementById('active-db-name').textContent = db.name;
-        document.getElementById('active-db-info').textContent = `${db.rows} items`;
+        document.getElementById('active-db-info').textContent = `${db.rows} items • Created ${new Date(db.created).toLocaleDateString()}`;
         if (activeCard) activeCard.style.display = 'block';
     } else {
         if (activeCard) activeCard.style.display = 'none';
     }
+    
+    updateStorageInfo();
 }
 
-function exportDatabase() {
-    if (!AppState.activeDbId) return;
+function clearAllData() {
+    if (!confirm('Delete ALL data including databases, history, and settings?')) return;
+    if (!confirm('Are you sure? This cannot be undone.')) return;
     
-    const db = AppState.databases[AppState.activeDbId];
-    const blob = new Blob([JSON.stringify(db.data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
+    localStorage.removeItem('qrGeneratorPro');
     
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${db.name}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    AppState.databases = {};
+    AppState.activeDbId = null;
+    AppState.history = [];
+    AppState.scanHistory = [];
     
-    showToast('Exported');
+    updateUI();
+    showToast('All data cleared');
 }
 
 // ========== UI ==========
@@ -1202,9 +1106,14 @@ function updateUI() {
     updateScanHistoryUI();
     updateSettingsUI();
     updateDatabaseTab();
+    updateStorageInfo();
 }
 
 // ========== UTILS ==========
+function generateId() {
+    return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+}
+
 function escapeHtml(text) {
     if (!text) return '';
     return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -1216,17 +1125,11 @@ function showToast(msg, duration = 2500) {
     
     toast.textContent = msg;
     toast.style.display = 'block';
-    toast.classList.remove('hidden');
-    
-    setTimeout(() => {
-        toast.style.display = 'none';
-    }, duration);
+    setTimeout(() => toast.style.display = 'none', duration);
 }
 
 // Cleanup
 window.addEventListener('beforeunload', stopScanner);
-document.addEventListener('visibilitychange', () => {
-    if (document.hidden) stopScanner();
-});
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopScanner(); });
 
 console.log('App loaded');
