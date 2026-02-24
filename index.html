@@ -193,13 +193,13 @@
             
             <!-- Upload Database -->
             <div class="card">
-                <h2>📦 Upload Database</h2>
+                <h2>📦 Import Database</h2>
                 
                 <div class="upload-zone" id="db-drop-zone">
                     <div class="upload-icon">📂</div>
-                    <p>Tap to upload CSV/TSV file</p>
-                    <small class="help-text">Format: Label, ID, Description</small>
-                    <input type="file" id="db-upload" accept=".csv,.tsv,.txt">
+                    <p>Tap to upload file</p>
+                    <small class="help-text">Supports: CSV, TSV, JSON</small>
+                    <input type="file" id="db-upload" accept=".csv,.tsv,.txt,.json">
                 </div>
 
                 <div id="upload-status" class="status hidden"></div>
@@ -214,7 +214,7 @@
                 </div>
             </div>
 
-            <!-- Loaded Databases -->
+            <!-- Your Databases -->
             <div class="card">
                 <h2>📋 Your Databases</h2>
                 <div id="db-list" class="db-list">
@@ -222,14 +222,27 @@
                 </div>
             </div>
 
-            <!-- Active Database -->
+            <!-- Active Database Actions -->
             <div id="active-db-card" class="card hidden">
                 <h2>✓ Active Database</h2>
                 <p><strong id="active-db-name"></strong></p>
                 <p id="active-db-info" class="text-muted"></p>
-                <button id="export-db" class="btn btn-small btn-secondary">📤 Export JSON</button>
+                
+                <div class="btn-group" style="margin-top: 12px;">
+                    <button id="export-db" class="btn btn-secondary">📤 Export JSON</button>
+                    <button id="export-csv" class="btn btn-secondary">📄 Export CSV</button>
+                </div>
             </div>
+
+            <!-- Storage Info -->
+            <div class="card">
+                <h2>💾 Storage</h2>
+                <p id="storage-info" class="text-muted">Calculating...</p>
+                <button id="clear-all-data" class="btn btn-small btn-danger" style="margin-top: 12px;">Clear All Data</button>
+            </div>
+
         </section>
+
 
     </main>
 
