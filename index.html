@@ -22,7 +22,7 @@
         </div>
     </header>
 
-    <!-- Navigation - 4 tabs -->
+    <!-- Navigation -->
     <nav class="nav-tabs">
         <button class="tab active" data-tab="generate">Generate</button>
         <button class="tab" data-tab="database">Database</button>
@@ -86,7 +86,7 @@
             </div>
         </section>
 
-        <!-- ========== DATABASE TAB - Search & QR ========== -->
+        <!-- ========== DATABASE TAB ========== -->
         <section id="database-tab" class="tab-content">
             
             <!-- No database message -->
@@ -94,12 +94,12 @@
                 <div class="empty-state">
                     <div class="empty-icon">📦</div>
                     <h2>No Database Loaded</h2>
-                    <p class="text-muted">Go to Settings tab to upload a database file</p>
+                    <p class="text-muted">Go to Settings to upload a CSV file</p>
                     <button id="go-to-settings" class="btn btn-primary">Go to Settings</button>
                 </div>
             </div>
 
-            <!-- Database search (shows when database is loaded) -->
+            <!-- Database search section -->
             <div id="db-search-section" class="hidden">
                 <div class="card">
                     <h2>🔍 Search Database</h2>
@@ -133,25 +133,36 @@
             <div class="card">
                 <h2>📷 Scan QR Code</h2>
                 
+                <!-- Scanner Status -->
+                <p id="scanner-status" class="text-muted text-center"></p>
+                
+                <!-- Start Button (for iOS) -->
+                <button id="start-scanner-btn" class="btn btn-primary btn-block" style="margin-bottom: 16px;">
+                    📷 Start Camera
+                </button>
+                
+                <!-- Video Container -->
                 <div class="scanner-container">
-                    <video id="scanner-video" autoplay playsinline></video>
+                    <video id="scanner-video" autoplay playsinline muted></video>
                     <div class="scanner-overlay">
                         <div class="scanner-frame"></div>
                     </div>
                 </div>
 
+                <!-- Camera Selector -->
                 <div class="form-group">
                     <label for="camera-select">Camera</label>
                     <select id="camera-select">
-                        <option>Loading cameras...</option>
+                        <option>Select camera...</option>
                     </select>
                 </div>
 
                 <div class="divider"><span>OR</span></div>
 
+                <!-- Upload Image -->
                 <div class="form-group">
                     <label for="scan-upload" class="btn btn-secondary btn-block">
-                        📁 Upload Image
+                        📁 Upload QR Image
                     </label>
                     <input type="file" id="scan-upload" accept="image/*" class="hidden">
                 </div>
@@ -224,7 +235,7 @@
 
     <!-- Footer -->
     <footer class="footer">
-        <p>QR Generator Pro by jureczk</p>
+        <p>QR Generator Pro</p>
     </footer>
 
     <!-- Toast -->
@@ -233,4 +244,3 @@
     <script src="app.js"></script>
 </body>
 </html>
-
