@@ -17,15 +17,15 @@ const AppState = {
         scanning: false,
         animationId: null
     },
-    // NEW: Chain transfer state
     chain: {
         sending: false,
-        receiving: null,  // { chainId, total, parts: {}, data: [] }
+        receiving: null,
         currentPart: 0,
         totalParts: 0,
         qrCodes: [],
         intervalId: null,
-        speed: 2000  // ms between QR switches
+        speed: 2000,
+        paused: false
     }
 };
 
@@ -166,12 +166,13 @@ function setupEventListeners() {
     document.getElementById('export-csv')?.addEventListener('click', exportAsCSV);
     document.getElementById('clear-all-data')?.addEventListener('click', clearAllData);
     
-    // NEW: Chain transfer
+    // Chain transfer
     document.getElementById('start-chain-transfer')?.addEventListener('click', startChainTransfer);
     document.getElementById('stop-chain-transfer')?.addEventListener('click', stopChainTransfer);
     document.getElementById('chain-speed')?.addEventListener('input', updateChainSpeed);
     document.getElementById('chain-prev')?.addEventListener('click', chainPrev);
     document.getElementById('chain-next')?.addEventListener('click', chainNext);
+    document.getElementById('chain-pause')?.addEventListener('click', toggleChainPause);
     document.getElementById('cancel-chain-receive')?.addEventListener('click', cancelChainReceive);
 }
 
@@ -367,7 +368,7 @@ function updateDatabaseTab() {
     const searchSection = document.getElementById('db-search-section');
     
     if (noDbMsg) noDbMsg.style.display = hasDb ? 'none' : 'block';
-    if (searchSection) searchSection.style.display = hasDb ? 'block' : 'none';
+    if (searchSection) searchSection.classList.toggle('hidden', !hasDb);
     
     if (hasDb) {
         const db = AppState.databases[AppState.activeDbId];
@@ -382,8 +383,8 @@ function handleDatabaseSearch(e) {
     const clearBtn = document.getElementById('clear-search');
     const qrResult = document.getElementById('db-qr-result');
     
-    if (clearBtn) clearBtn.style.display = query ? 'block' : 'none';
-    if (qrResult) qrResult.style.display = 'none';
+    if (clearBtn) clearBtn.classList.toggle('hidden', !query);
+    if (qrResult) qrResult.classList.add('hidden');
     
     if (!query || !AppState.activeDbId) {
         if (resultsDiv) resultsDiv.innerHTML = '';
@@ -423,8 +424,8 @@ function clearSearch() {
     const results = document.getElementById('search-results');
     if (results) results.innerHTML = '';
     
-    document.getElementById('clear-search').style.display = 'none';
-    document.getElementById('db-qr-result').style.display = 'none';
+    document.getElementById('clear-search')?.classList.add('hidden');
+    document.getElementById('db-qr-result')?.classList.add('hidden');
 }
 
 async function selectDatabaseItem(id, label) {
@@ -436,7 +437,7 @@ async function selectDatabaseItem(id, label) {
         document.getElementById('db-qr-display').innerHTML = `<img src="${qrDataUrl}" alt="QR">`;
         document.getElementById('db-qr-label').textContent = label;
         document.getElementById('db-qr-id').textContent = `ID: ${id}`;
-        document.getElementById('db-qr-result').style.display = 'block';
+        document.getElementById('db-qr-result').classList.remove('hidden');
         
         AppState.currentDbQR = { dataUrl: qrDataUrl, data: id, label };
         addToHistory(id);
@@ -597,7 +598,7 @@ function handleScanResult(data) {
     lastScanTime = Date.now();
     
     document.getElementById('scan-data').textContent = data;
-    document.getElementById('scan-result').style.display = 'block';
+    document.getElementById('scan-result').classList.remove('hidden');
     AppState.currentScan = data;
     
     AppState.scanHistory = [data, ...AppState.scanHistory.filter(i => i !== data)].slice(0, 20);
@@ -666,7 +667,7 @@ function updateScanHistoryUI() {
     list.querySelectorAll('.history-item').forEach(el => {
         el.addEventListener('click', () => {
             document.getElementById('scan-data').textContent = el.dataset.value;
-            document.getElementById('scan-result').style.display = 'block';
+            document.getElementById('scan-result').classList.remove('hidden');
             AppState.currentScan = el.dataset.value;
         });
     });
@@ -703,8 +704,8 @@ function generateFromScan() {
 // CHAIN TRANSFER - Phone to Phone
 // ========================================
 
-const CHAIN_PREFIX = 'QRP:1:';  // QR Pro : version 1
-const CHUNK_SIZE = 1500;  // Safe size for QR codes
+const CHAIN_PREFIX = 'QRP:1:';
+const CHUNK_SIZE = 1500;
 
 async function startChainTransfer() {
     if (!AppState.activeDbId) {
@@ -716,9 +717,9 @@ async function startChainTransfer() {
     const chainUI = document.getElementById('chain-transfer-ui');
     const startBtn = document.getElementById('start-chain-transfer');
     
-    // Prepare data
+    // Prepare data with short keys to save space
     const exportData = {
-        n: db.name,  // Short keys to save space
+        n: db.name,
         d: db.data.map(item => ({
             l: item.label,
             i: item.id,
@@ -739,6 +740,7 @@ async function startChainTransfer() {
     AppState.chain.qrCodes = [];
     AppState.chain.totalParts = chunks.length;
     AppState.chain.currentPart = 0;
+    AppState.chain.paused = false;
     
     showToast(`Creating ${chunks.length} QR codes...`);
     
@@ -753,7 +755,11 @@ async function startChainTransfer() {
         // Show UI
         AppState.chain.sending = true;
         if (startBtn) startBtn.style.display = 'none';
-        if (chainUI) chainUI.style.display = 'block';
+        if (chainUI) chainUI.classList.remove('hidden');
+        
+        // Reset pause button
+        const pauseBtn = document.getElementById('chain-pause');
+        if (pauseBtn) pauseBtn.textContent = '⏸️ Pause';
         
         updateChainDisplay();
         startChainAutoPlay();
@@ -768,6 +774,7 @@ async function startChainTransfer() {
 
 function stopChainTransfer() {
     AppState.chain.sending = false;
+    AppState.chain.paused = false;
     
     if (AppState.chain.intervalId) {
         clearInterval(AppState.chain.intervalId);
@@ -780,9 +787,11 @@ function stopChainTransfer() {
     
     const chainUI = document.getElementById('chain-transfer-ui');
     const startBtn = document.getElementById('start-chain-transfer');
+    const pauseBtn = document.getElementById('chain-pause');
     
-    if (chainUI) chainUI.style.display = 'none';
+    if (chainUI) chainUI.classList.add('hidden');
     if (startBtn) startBtn.style.display = 'block';
+    if (pauseBtn) pauseBtn.textContent = '⏸️ Pause';
 }
 
 function updateChainDisplay() {
@@ -810,14 +819,39 @@ function updateChainDisplay() {
 function startChainAutoPlay() {
     if (AppState.chain.intervalId) {
         clearInterval(AppState.chain.intervalId);
+        AppState.chain.intervalId = null;
     }
     
+    // Don't start if paused
+    if (AppState.chain.paused) return;
+    
     AppState.chain.intervalId = setInterval(() => {
-        if (!AppState.chain.sending) return;
+        if (!AppState.chain.sending || AppState.chain.paused) return;
         
         AppState.chain.currentPart = (AppState.chain.currentPart + 1) % AppState.chain.totalParts;
         updateChainDisplay();
     }, AppState.chain.speed);
+}
+
+function toggleChainPause() {
+    const btn = document.getElementById('chain-pause');
+    
+    if (AppState.chain.paused) {
+        // Resume
+        AppState.chain.paused = false;
+        if (btn) btn.textContent = '⏸️ Pause';
+        startChainAutoPlay();
+        showToast('Auto-cycle resumed');
+    } else {
+        // Pause
+        AppState.chain.paused = true;
+        if (btn) btn.textContent = '▶️ Play';
+        if (AppState.chain.intervalId) {
+            clearInterval(AppState.chain.intervalId);
+            AppState.chain.intervalId = null;
+        }
+        showToast('Paused - use Prev/Next buttons');
+    }
 }
 
 function updateChainSpeed(e) {
@@ -827,8 +861,8 @@ function updateChainSpeed(e) {
     const label = document.getElementById('chain-speed-label');
     if (label) label.textContent = `${(speed / 1000).toFixed(1)}s`;
     
-    // Restart autoplay with new speed
-    if (AppState.chain.sending) {
+    // Restart autoplay with new speed if not paused
+    if (AppState.chain.sending && !AppState.chain.paused) {
         startChainAutoPlay();
     }
 }
@@ -859,7 +893,7 @@ function handleChainQR(data) {
     const chainId = parts[0];
     const partNum = parseInt(parts[1]);
     const totalParts = parseInt(parts[2]);
-    const payload = parts.slice(3).join(':');  // Rejoin in case payload contains colons
+    const payload = parts.slice(3).join(':');
     
     if (isNaN(partNum) || isNaN(totalParts) || partNum < 1 || partNum > totalParts) {
         console.warn('Invalid chain part numbers');
@@ -908,8 +942,8 @@ function showChainReceiveUI() {
     const ui = document.getElementById('chain-receive-ui');
     const normalResult = document.getElementById('scan-result');
     
-    if (ui) ui.style.display = 'block';
-    if (normalResult) normalResult.style.display = 'none';
+    if (ui) ui.classList.remove('hidden');
+    if (normalResult) normalResult.classList.add('hidden');
     
     updateChainReceiveProgress();
 }
@@ -1003,7 +1037,7 @@ function hideChainReceiveUI() {
     AppState.chain.receiving = null;
     
     const ui = document.getElementById('chain-receive-ui');
-    if (ui) ui.style.display = 'none';
+    if (ui) ui.classList.add('hidden');
 }
 
 // ========================================
@@ -1060,7 +1094,7 @@ async function processFile(file) {
     if (status) {
         status.className = 'status';
         status.textContent = '📖 Reading file...';
-        status.style.display = 'block';
+        status.classList.remove('hidden');
     }
     
     try {
@@ -1069,7 +1103,6 @@ async function processFile(file) {
         
         let result;
         
-        // Detect file type
         if (fileName.endsWith('.json')) {
             result = await importJSON(text, name);
         } else {
@@ -1108,45 +1141,25 @@ async function importJSON(text, defaultName) {
     let data = [];
     let name = defaultName;
     
-    // Handle different JSON formats
-    
-    // Format 1: Direct array of items
-    // [{"label": "...", "id": "..."}, ...]
     if (Array.isArray(json)) {
         data = json.map(item => normalizeItem(item));
-    }
-    
-    // Format 2: Object with data array (our export format)
-    // {"name": "...", "data": [...], "rows": ...}
-    else if (json.data && Array.isArray(json.data)) {
+    } else if (json.data && Array.isArray(json.data)) {
         name = json.name || defaultName;
         data = json.data.map(item => normalizeItem(item));
-    }
-    
-    // Format 3: Object with items array
-    // {"items": [...]}
-    else if (json.items && Array.isArray(json.items)) {
+    } else if (json.items && Array.isArray(json.items)) {
         data = json.items.map(item => normalizeItem(item));
-    }
-    
-    // Format 4: Object with entries array
-    // {"entries": [...]}
-    else if (json.entries && Array.isArray(json.entries)) {
+    } else if (json.entries && Array.isArray(json.entries)) {
         data = json.entries.map(item => normalizeItem(item));
-    }
-    
-    else {
+    } else {
         throw new Error('Unrecognized JSON format. Expected array or object with data/items/entries array.');
     }
     
-    // Filter out invalid entries
     data = data.filter(item => item.label && item.id);
     
     if (data.length === 0) {
         throw new Error('No valid entries found. Each item needs "label" and "id" fields.');
     }
     
-    // Save to state
     const dbId = generateId();
     
     AppState.databases[dbId] = {
@@ -1215,7 +1228,6 @@ async function parseCSV(content, name) {
 }
 
 function parseCSVLine(line, delim) {
-    // Handle quoted fields
     const parts = [];
     let current = '';
     let inQuotes = false;
@@ -1244,7 +1256,6 @@ function exportAsJSON() {
     
     const db = AppState.databases[AppState.activeDbId];
     
-    // Export full database object (can be re-imported)
     const exportData = {
         name: db.name,
         exported: new Date().toISOString(),
@@ -1263,7 +1274,6 @@ function exportAsCSV() {
     
     const db = AppState.databases[AppState.activeDbId];
     
-    // Create CSV with header
     let csv = 'Label,ID,Description\n';
     
     db.data.forEach(item => {
@@ -1309,7 +1319,7 @@ async function loadDatabaseFromUrl() {
     if (status) {
         status.className = 'status';
         status.textContent = '🌐 Loading...';
-        status.style.display = 'block';
+        status.classList.remove('hidden');
     }
     
     try {
@@ -1321,11 +1331,9 @@ async function loadDatabaseFromUrl() {
         
         let result;
         
-        // Try JSON first
         try {
             result = await importJSON(text, name);
         } catch {
-            // Try CSV
             result = await parseCSV(text, name);
         }
         
@@ -1356,7 +1364,7 @@ function updateSettingsUI() {
     
     if (keys.length === 0) {
         list.innerHTML = '<p class="text-muted">No databases loaded</p>';
-        if (activeCard) activeCard.style.display = 'none';
+        if (activeCard) activeCard.classList.add('hidden');
         return;
     }
     
@@ -1413,9 +1421,9 @@ function updateSettingsUI() {
         const db = AppState.databases[AppState.activeDbId];
         document.getElementById('active-db-name').textContent = db.name;
         document.getElementById('active-db-info').textContent = `${db.rows} items • Created ${new Date(db.created).toLocaleDateString()}`;
-        if (activeCard) activeCard.style.display = 'block';
+        if (activeCard) activeCard.classList.remove('hidden');
     } else {
-        if (activeCard) activeCard.style.display = 'none';
+        if (activeCard) activeCard.classList.add('hidden');
     }
     
     updateStorageInfo();
@@ -1460,8 +1468,8 @@ function showToast(msg, duration = 2500) {
     if (!toast) return;
     
     toast.textContent = msg;
-    toast.style.display = 'block';
-    setTimeout(() => toast.style.display = 'none', duration);
+    toast.classList.remove('hidden');
+    setTimeout(() => toast.classList.add('hidden'), duration);
 }
 
 // Cleanup
