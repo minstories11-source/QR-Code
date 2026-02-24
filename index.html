@@ -233,6 +233,16 @@
                 <h2>📲 Phone-to-Phone Transfer</h2>
                 <p class="text-muted">Transfer database to another phone via QR codes - no internet needed!</p>
                 
+                <div class="form-group" style="margin-top: 12px;">
+                    <label for="chunk-size-select">Transfer Mode</label>
+                    <select id="chunk-size-select">
+                        <option value="500">📶 Reliable (more codes, easiest to scan)</option>
+                        <option value="800" selected>⚖️ Balanced (recommended)</option>
+                        <option value="1200">🚀 Fast (fewer codes)</option>
+                        <option value="2000">⚡ Turbo (fewest codes, may struggle)</option>
+                    </select>
+                </div>
+                
                 <button id="start-chain-transfer" class="btn btn-primary btn-block" style="margin-top: 12px;">
                     📤 Transfer Active Database
                 </button>
@@ -354,7 +364,7 @@
 
     <!-- Footer -->
     <footer class="footer">
-        <p>QR Generator Pro by jureczk</p>
+        <p>QR Generator Pro</p>
     </footer>
 
     <!-- Toast -->
