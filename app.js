@@ -1,6 +1,6 @@
 // ========================================
-// QR GENERATOR PRO - MOBILE WEBSITE
-// iOS File Upload Fixed + Database Search
+// QR GENERATOR PRO - SIMPLIFIED
+// Generate, Scan, Database Search
 // ========================================
 
 // ========== GLOBAL STATE ==========
@@ -10,65 +10,12 @@ const AppState = {
     history: [],
     scanHistory: [],
     theme: 'light',
-    bulkQRCodes: [],
     currentQR: null,
     currentScan: null,
-    selectedLabelTemplate: 'avery-5160',
     scanner: {
         stream: null,
         scanning: false,
         animationId: null
-    }
-};
-
-// ========== CONSTANTS ==========
-const LABEL_TEMPLATES = {
-    'avery-5160': { name: 'Avery 5160', cols: 3, rows: 10, labelWidth: 66.68, labelHeight: 25.4, marginTop: 12.7, marginLeft: 6.35, gapX: 3.18, gapY: 0, total: 30 },
-    'avery-5163': { name: 'Avery 5163', cols: 2, rows: 5, labelWidth: 101.6, labelHeight: 50.8, marginTop: 12.7, marginLeft: 6.35, gapX: 3.18, gapY: 0, total: 10 },
-    'avery-5167': { name: 'Avery 5167', cols: 4, rows: 20, labelWidth: 50.8, labelHeight: 12.7, marginTop: 12.7, marginLeft: 6.35, gapX: 3.18, gapY: 0, total: 80 }
-};
-
-const QR_TEMPLATES = {
-    'zone-blue': {
-        name: 'Zone Label - Blue',
-        canvasWidth: 350,
-        canvasHeight: 400,
-        bgColor: '#ffffff',
-        borderRadius: 12,
-        borderColor: '#2563eb',
-        borderWidth: 3,
-        qrSize: 250,
-        qrX: 50,
-        qrY: 50,
-        qrFgColor: '#1e40af',
-        textFields: [{ content: '{data}', x: 50, y: 12, fontSize: 28, fontWeight: 'bold', color: '#1e40af' }],
-        symbols: [{ content: '↓', x: 50, y: 88, size: 40, color: '#2563eb' }]
-    },
-    'zone-gradient': {
-        name: 'Zone Label - Gradient',
-        canvasWidth: 400,
-        canvasHeight: 400,
-        gradient: { type: 'linear', angle: 135, colors: ['#667eea', '#764ba2'] },
-        borderRadius: 20,
-        qrSize: 250,
-        qrX: 50,
-        qrY: 55,
-        qrFgColor: '#ffffff',
-        qrBgColor: 'transparent',
-        textFields: [{ content: '{data}', x: 50, y: 12, fontSize: 32, fontWeight: 'bold', color: '#ffffff', shadow: true }]
-    },
-    'simple-border': {
-        name: 'Simple Border',
-        canvasWidth: 320,
-        canvasHeight: 360,
-        bgColor: '#ffffff',
-        borderRadius: 8,
-        borderColor: '#000000',
-        borderWidth: 2,
-        qrSize: 250,
-        qrX: 50,
-        qrY: 45,
-        textFields: [{ content: '{data}', x: 50, y: 90, fontSize: 14, color: '#000000' }]
     }
 };
 
@@ -102,8 +49,7 @@ function saveState() {
             activeDbId: AppState.activeDbId,
             history: AppState.history,
             scanHistory: AppState.scanHistory,
-            theme: AppState.theme,
-            selectedLabelTemplate: AppState.selectedLabelTemplate
+            theme: AppState.theme
         };
         localStorage.setItem('qrGeneratorState', JSON.stringify(toSave));
     } catch (e) {
@@ -124,24 +70,13 @@ function setupEventListeners() {
     // Generate tab
     document.getElementById('qr-input')?.addEventListener('input', updateCharCount);
     document.getElementById('generate-btn')?.addEventListener('click', generateQR);
+    document.getElementById('db-search')?.addEventListener('input', handleDatabaseSearch);
     
     // QR result actions
     document.getElementById('download-png')?.addEventListener('click', downloadQR);
     document.getElementById('copy-qr')?.addEventListener('click', copyQR);
     document.getElementById('print-qr')?.addEventListener('click', printQR);
     document.getElementById('clear-history')?.addEventListener('click', clearHistory);
-    
-    // Batch tab
-    document.getElementById('preview-batch')?.addEventListener('click', previewBatch);
-    document.getElementById('generate-batch')?.addEventListener('click', generateBatch);
-    document.getElementById('download-all-zip')?.addEventListener('click', downloadAllBatch);
-    document.getElementById('download-pdf')?.addEventListener('click', downloadBatchPDF);
-    document.getElementById('print-labels')?.addEventListener('click', printLabels);
-    
-    // Label template selection
-    document.querySelectorAll('.label-btn').forEach(btn => {
-        btn.addEventListener('click', () => selectLabelTemplate(btn.dataset.template));
-    });
     
     // Scan tab
     document.getElementById('camera-select')?.addEventListener('change', switchCamera);
@@ -150,13 +85,10 @@ function setupEventListeners() {
     document.getElementById('open-url')?.addEventListener('click', openScannedUrl);
     document.getElementById('generate-from-scan')?.addEventListener('click', generateFromScan);
     
-    // Database tab - iOS FIXED
+    // Database tab
     setupDatabaseUpload();
-    document.getElementById('db-search')?.addEventListener('input', handleDatabaseSearch);
-    document.getElementById('scan-db-qr')?.addEventListener('click', scanDatabaseQR);
     document.getElementById('load-db-url')?.addEventListener('click', loadDatabaseFromUrl);
     document.getElementById('export-db')?.addEventListener('click', exportDatabase);
-    document.getElementById('generate-db-qr')?.addEventListener('click', generateDatabaseQR);
 }
 
 // ========== TAB NAVIGATION ==========
@@ -199,8 +131,10 @@ function updateCharCount() {
     }
 }
 
-async function generateQR() {
-    const input = document.getElementById('qr-input')?.value.trim();
+async function generateQR(textOverride) {
+    const inputEl = document.getElementById('qr-input');
+    const input = typeof textOverride === 'string' ? textOverride : inputEl?.value.trim();
+    
     if (!input) {
         showToast('Please enter text or URL');
         return;
@@ -213,19 +147,10 @@ async function generateQR() {
     
     try {
         const errorLevel = document.getElementById('error-level')?.value || 'M';
-        const style = document.getElementById('qr-style')?.value || 'square';
         const fgColor = document.getElementById('fg-color')?.value || '#000000';
         const bgColor = document.getElementById('bg-color')?.value || '#ffffff';
-        const templateId = document.getElementById('template-select')?.value || '';
         
-        let qrDataUrl;
-        
-        if (templateId && QR_TEMPLATES[templateId]) {
-            qrDataUrl = await generateTemplatedQR(input, templateId, errorLevel, style);
-        } else {
-            qrDataUrl = await generateBasicQR(input, errorLevel, fgColor, bgColor, style);
-        }
-        
+        const qrDataUrl = await generateBasicQR(input, errorLevel, fgColor, bgColor);
         displayQRResult(qrDataUrl, input);
         addToHistory(input);
         
@@ -235,7 +160,7 @@ async function generateQR() {
     }
 }
 
-function generateBasicQR(text, errorLevel, fgColor, bgColor, style) {
+function generateBasicQR(text, errorLevel, fgColor, bgColor) {
     return new Promise((resolve, reject) => {
         try {
             const container = document.createElement('div');
@@ -254,13 +179,7 @@ function generateBasicQR(text, errorLevel, fgColor, bgColor, style) {
             const checkCanvas = () => {
                 const canvas = container.querySelector('canvas');
                 if (canvas && canvas.width > 0) {
-                    let finalCanvas = canvas;
-                    
-                    if (style === 'dots' || style === 'rounded') {
-                        finalCanvas = applyQRStyle(canvas, style, fgColor, bgColor);
-                    }
-                    
-                    const dataUrl = finalCanvas.toDataURL('image/png');
+                    const dataUrl = canvas.toDataURL('image/png');
                     document.body.removeChild(container);
                     resolve(dataUrl);
                 } else {
@@ -275,240 +194,16 @@ function generateBasicQR(text, errorLevel, fgColor, bgColor, style) {
     });
 }
 
-function applyQRStyle(sourceCanvas, style, fgColor, bgColor) {
-    const size = sourceCanvas.width;
-    const ctx = sourceCanvas.getContext('2d');
-    const imageData = ctx.getImageData(0, 0, size, size);
-    const data = imageData.data;
-    
-    const newCanvas = document.createElement('canvas');
-    newCanvas.width = size;
-    newCanvas.height = size;
-    const newCtx = newCanvas.getContext('2d');
-    
-    newCtx.fillStyle = bgColor;
-    newCtx.fillRect(0, 0, size, size);
-    
-    let transitions = [];
-    let lastWasDark = false;
-    let transitionStart = 0;
-    
-    for (let x = 0; x < size; x++) {
-        const idx = (Math.floor(size / 2) * size + x) * 4;
-        const isDark = data[idx] < 128;
-        
-        if (isDark !== lastWasDark) {
-            if (x > 0) {
-                transitions.push(x - transitionStart);
-                transitionStart = x;
-            }
-            lastWasDark = isDark;
-        }
-    }
-    
-    transitions.sort((a, b) => a - b);
-    const moduleSize = transitions[0] || Math.floor(size / 25);
-    const gridSize = Math.round(size / moduleSize);
-    const actualCellSize = size / gridSize;
-    
-    const matrix = [];
-    for (let row = 0; row < gridSize; row++) {
-        matrix[row] = [];
-        for (let col = 0; col < gridSize; col++) {
-            const centerX = Math.floor(col * actualCellSize + actualCellSize / 2);
-            const centerY = Math.floor(row * actualCellSize + actualCellSize / 2);
-            
-            if (centerX >= size || centerY >= size) {
-                matrix[row][col] = false;
-                continue;
-            }
-            
-            const idx = (centerY * size + centerX) * 4;
-            matrix[row][col] = data[idx] < 128;
-        }
-    }
-    
-    function isInFinderPattern(row, col) {
-        const finderSize = 7;
-        if (row < finderSize && col < finderSize) return true;
-        if (row < finderSize && col >= gridSize - finderSize) return true;
-        if (row >= gridSize - finderSize && col < finderSize) return true;
-        return false;
-    }
-    
-    newCtx.fillStyle = fgColor;
-    
-    for (let row = 0; row < gridSize; row++) {
-        for (let col = 0; col < gridSize; col++) {
-            if (matrix[row][col]) {
-                const x = col * actualCellSize;
-                const y = row * actualCellSize;
-                const isFinderArea = isInFinderPattern(row, col);
-                
-                if (style === 'dots' && !isFinderArea) {
-                    const centerX = x + actualCellSize / 2;
-                    const centerY = y + actualCellSize / 2;
-                    const radius = actualCellSize * 0.45;
-                    
-                    newCtx.beginPath();
-                    newCtx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-                    newCtx.fill();
-                } else if (style === 'rounded' && !isFinderArea) {
-                    const padding = actualCellSize * 0.05;
-                    const radius = actualCellSize * 0.2;
-                    const rectSize = actualCellSize - (padding * 2);
-                    
-                    roundRect(newCtx, x + padding, y + padding, rectSize, rectSize, radius);
-                    newCtx.fill();
-                } else {
-                    newCtx.fillRect(x, y, actualCellSize, actualCellSize);
-                }
-            }
-        }
-    }
-    
-    return newCanvas;
-}
-
-async function generateTemplatedQR(text, templateId, errorLevel, style) {
-    const template = QR_TEMPLATES[templateId];
-    if (!template) {
-        return generateBasicQR(text, errorLevel, '#000000', '#ffffff', style);
-    }
-    
-    const canvas = document.createElement('canvas');
-    canvas.width = template.canvasWidth;
-    canvas.height = template.canvasHeight;
-    const ctx = canvas.getContext('2d');
-    
-    if (template.gradient) {
-        const gradient = template.gradient;
-        let grd;
-        
-        if (gradient.type === 'linear') {
-            const angle = (gradient.angle || 0) * Math.PI / 180;
-            const x1 = canvas.width / 2 - Math.cos(angle) * canvas.width / 2;
-            const y1 = canvas.height / 2 - Math.sin(angle) * canvas.height / 2;
-            const x2 = canvas.width / 2 + Math.cos(angle) * canvas.width / 2;
-            const y2 = canvas.height / 2 + Math.sin(angle) * canvas.height / 2;
-            grd = ctx.createLinearGradient(x1, y1, x2, y2);
-        } else {
-            grd = ctx.createRadialGradient(
-                canvas.width / 2, canvas.height / 2, 0,
-                canvas.width / 2, canvas.height / 2, canvas.width / 2
-            );
-        }
-        
-        gradient.colors.forEach((color, idx) => {
-            grd.addColorStop(idx / (gradient.colors.length - 1), color);
-        });
-        
-        ctx.fillStyle = grd;
-    } else {
-        ctx.fillStyle = template.bgColor || '#ffffff';
-    }
-    
-    if (template.borderRadius > 0) {
-        roundRect(ctx, 0, 0, canvas.width, canvas.height, template.borderRadius);
-        ctx.fill();
-    } else {
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
-    
-    if (template.borderWidth && template.borderColor) {
-        ctx.strokeStyle = template.borderColor;
-        ctx.lineWidth = template.borderWidth;
-        
-        if (template.borderRadius > 0) {
-            roundRect(ctx, template.borderWidth / 2, template.borderWidth / 2,
-                canvas.width - template.borderWidth, canvas.height - template.borderWidth,
-                template.borderRadius);
-            ctx.stroke();
-        } else {
-            ctx.strokeRect(template.borderWidth / 2, template.borderWidth / 2,
-                canvas.width - template.borderWidth, canvas.height - template.borderWidth);
-        }
-    }
-    
-    const qrDataUrl = await generateBasicQR(
-        text,
-        errorLevel,
-        template.qrFgColor || '#000000',
-        template.qrBgColor || '#ffffff',
-        style
-    );
-    
-    const qrImg = await loadImage(qrDataUrl);
-    const qrX = (template.qrX / 100) * canvas.width;
-    const qrY = (template.qrY / 100) * canvas.height;
-    const qrSize = template.qrSize;
-    
-    ctx.drawImage(qrImg, qrX - qrSize / 2, qrY - qrSize / 2, qrSize, qrSize);
-    
-    if (template.textFields) {
-        template.textFields.forEach(field => {
-            const x = (field.x / 100) * canvas.width;
-            const y = (field.y / 100) * canvas.height;
-            
-            ctx.save();
-            ctx.font = `${field.fontWeight || 'normal'} ${field.fontSize}px Arial, sans-serif`;
-            ctx.fillStyle = field.color || '#000000';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            
-            if (field.shadow) {
-                ctx.shadowColor = 'rgba(0,0,0,0.5)';
-                ctx.shadowBlur = 6;
-                ctx.shadowOffsetX = 2;
-                ctx.shadowOffsetY = 2;
-            }
-            
-            const displayText = field.content.replace('{data}', text);
-            ctx.fillText(displayText, x, y);
-            ctx.restore();
-        });
-    }
-    
-    if (template.symbols) {
-        template.symbols.forEach(symbol => {
-            const x = (symbol.x / 100) * canvas.width;
-            const y = (symbol.y / 100) * canvas.height;
-            
-            ctx.save();
-            ctx.font = `${symbol.size}px Arial, sans-serif`;
-            ctx.fillStyle = symbol.color || '#000000';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(symbol.content, x, y);
-            ctx.restore();
-        });
-    }
-    
-    return canvas.toDataURL('image/png');
-}
-
 function displayQRResult(dataUrl, data) {
     const resultDiv = document.getElementById('qr-result');
     const qrDisplay = document.getElementById('qr-display');
     const preview = document.getElementById('qr-data-preview');
-    const distanceInfo = document.getElementById('scan-distance');
     
     if (qrDisplay) qrDisplay.innerHTML = `<img src="${dataUrl}" alt="QR Code">`;
     if (preview) preview.textContent = data.length > 50 ? data.substring(0, 50) + '...' : data;
     
-    if (distanceInfo) {
-        const qrSize = 50;
-        const optimal = Math.round(qrSize * 2);
-        const min = Math.round(qrSize * 0.5);
-        const max = Math.round(qrSize * 4);
-        
-        distanceInfo.innerHTML = `
-            <strong>📏 Scan Distance:</strong> ${optimal}cm optimal<br>
-            <small>Min: ${min}cm | Max: ${max}cm (for ${qrSize}mm printed QR)</small>
-        `;
-    }
-    
     AppState.currentQR = { dataUrl, data };
+    
     if (resultDiv) {
         resultDiv.classList.remove('hidden');
         resultDiv.scrollIntoView({ behavior: 'smooth' });
@@ -564,7 +259,7 @@ function printQR() {
         </head>
         <body>
             <img src="${AppState.currentQR.dataUrl}" alt="QR Code" onload="setTimeout(() => window.print(), 100)">
-            <p>${AppState.currentQR.data}</p>
+            <p>${escapeHtml(AppState.currentQR.data)}</p>
         </body>
         </html>
     `);
@@ -614,315 +309,6 @@ function updateHistoryUI() {
     });
 }
 
-// ========== BATCH GENERATION ==========
-function parsePattern(pattern) {
-    const items = [];
-    const rangeRegex = /\{([^}]+)\}/g;
-    
-    let matches = [];
-    let match;
-    while ((match = rangeRegex.exec(pattern)) !== null) {
-        matches.push({
-            full: match[0],
-            content: match[1],
-            index: match.index
-        });
-    }
-    
-    if (matches.length === 0) {
-        return [pattern];
-    }
-    
-    const ranges = matches.map(m => parseRange(m.content));
-    const combinations = cartesian(ranges);
-    
-    combinations.forEach(combo => {
-        let result = pattern;
-        const comboArray = Array.isArray(combo) ? combo : [combo];
-        
-        for (let i = matches.length - 1; i >= 0; i--) {
-            const value = comboArray[i];
-            const before = result.substring(0, matches[i].index);
-            const after = result.substring(matches[i].index + matches[i].full.length);
-            result = before + value + after;
-        }
-        
-        items.push(result);
-    });
-    
-    return items;
-}
-
-function parseRange(content) {
-    if (/^\d+-\d+$/.test(content)) {
-        const [start, end] = content.split('-').map(s => s.trim());
-        const startNum = parseInt(start);
-        const endNum = parseInt(end);
-        const padLength = start.length;
-        const values = [];
-        
-        for (let i = startNum; i <= endNum; i++) {
-            values.push(i.toString().padStart(padLength, '0'));
-        }
-        return values;
-    }
-    
-    if (/^[A-Za-z]-[A-Za-z]$/.test(content)) {
-        const [start, end] = content.split('-');
-        const startCode = start.charCodeAt(0);
-        const endCode = end.charCodeAt(0);
-        const values = [];
-        
-        for (let i = startCode; i <= endCode; i++) {
-            values.push(String.fromCharCode(i));
-        }
-        return values;
-    }
-    
-    if (content.includes('|')) {
-        return content.split('|').map(s => s.trim());
-    }
-    
-    return [content];
-}
-
-function cartesian(arrays) {
-    if (arrays.length === 0) return [[]];
-    if (arrays.length === 1) return arrays[0].map(item => [item]);
-    
-    return arrays.reduce((acc, curr) => {
-        const result = [];
-        acc.forEach(a => {
-            curr.forEach(c => {
-                result.push(Array.isArray(a) ? [...a, c] : [a, c]);
-            });
-        });
-        return result;
-    });
-}
-
-function previewBatch() {
-    const pattern = document.getElementById('batch-pattern')?.value.trim();
-    const manual = document.getElementById('batch-manual')?.value.trim();
-    
-    let items = [];
-    
-    if (pattern) {
-        items = parsePattern(pattern);
-    } else if (manual) {
-        items = manual.split('\n').map(line => line.trim()).filter(line => line);
-    }
-    
-    if (items.length === 0) {
-        showToast('Please enter a pattern or items');
-        return;
-    }
-    
-    const previewDiv = document.getElementById('batch-preview');
-    const previewList = document.getElementById('batch-preview-list');
-    
-    if (previewDiv && previewList) {
-        let previewText = `Total: ${items.length} items\n\n`;
-        previewText += items.slice(0, 15).join('\n');
-        if (items.length > 15) {
-            previewText += `\n... and ${items.length - 15} more`;
-        }
-        
-        previewList.textContent = previewText;
-        previewDiv.classList.remove('hidden');
-    }
-}
-
-async function generateBatch() {
-    const pattern = document.getElementById('batch-pattern')?.value.trim();
-    const manual = document.getElementById('batch-manual')?.value.trim();
-    
-    let items = [];
-    
-    if (pattern) {
-        items = parsePattern(pattern);
-    } else if (manual) {
-        items = manual.split('\n').map(line => line.trim()).filter(line => line);
-    }
-    
-    if (items.length === 0) {
-        showToast('Please enter a pattern or items');
-        return;
-    }
-    
-    if (items.length > 500 && !confirm(`Generate ${items.length} QR codes? This may take a while.`)) {
-        return;
-    }
-    
-    const errorLevel = document.getElementById('error-level')?.value || 'M';
-    const style = document.getElementById('qr-style')?.value || 'square';
-    const templateId = document.getElementById('batch-template')?.value || '';
-    
-    const progressDiv = document.getElementById('batch-progress');
-    const progressFill = document.getElementById('progress-fill');
-    const progressText = document.getElementById('progress-text');
-    const resultsDiv = document.getElementById('batch-results');
-    const grid = document.getElementById('batch-grid');
-    
-    if (progressDiv) progressDiv.classList.remove('hidden');
-    if (resultsDiv) resultsDiv.classList.add('hidden');
-    if (grid) grid.innerHTML = '';
-    AppState.bulkQRCodes = [];
-    
-    for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        const percent = ((i + 1) / items.length) * 100;
-        
-        if (progressFill) progressFill.style.width = percent + '%';
-        if (progressText) progressText.textContent = `Generating ${i + 1} of ${items.length}...`;
-        
-        try {
-            let qrUrl;
-            
-            if (templateId && QR_TEMPLATES[templateId]) {
-                qrUrl = await generateTemplatedQR(item, templateId, errorLevel, style);
-            } else {
-                const fgColor = document.getElementById('fg-color')?.value || '#000000';
-                const bgColor = document.getElementById('bg-color')?.value || '#ffffff';
-                qrUrl = await generateBasicQR(item, errorLevel, fgColor, bgColor, style);
-            }
-            
-            AppState.bulkQRCodes.push({ data: item, url: qrUrl });
-            
-            if (grid) {
-                const itemEl = document.createElement('div');
-                itemEl.className = 'batch-item';
-                itemEl.innerHTML = `
-                    <img src="${qrUrl}" alt="${escapeHtml(item)}">
-                    <div class="batch-item-label">${item.length > 15 ? item.substring(0, 15) + '...' : item}</div>
-                `;
-                grid.appendChild(itemEl);
-            }
-            
-        } catch (error) {
-            console.error(`Error generating QR for "${item}":`, error);
-        }
-        
-        if (i % 5 === 0) {
-            await sleep(0);
-        }
-    }
-    
-    if (progressText) progressText.textContent = `✓ Generated ${items.length} QR codes!`;
-    
-    setTimeout(() => {
-        if (progressDiv) progressDiv.classList.add('hidden');
-        if (resultsDiv) resultsDiv.classList.remove('hidden');
-    }, 1000);
-}
-
-function selectLabelTemplate(templateId) {
-    AppState.selectedLabelTemplate = templateId;
-    saveState();
-    
-    document.querySelectorAll('.label-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.template === templateId);
-    });
-    
-    showToast(`Selected: ${LABEL_TEMPLATES[templateId]?.name || templateId}`);
-}
-
-function downloadAllBatch() {
-    if (AppState.bulkQRCodes.length === 0) return;
-    
-    AppState.bulkQRCodes.forEach((qr, index) => {
-        setTimeout(() => {
-            const link = document.createElement('a');
-            link.href = qr.url;
-            link.download = `qr-${String(index + 1).padStart(4, '0')}-${qr.data.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20)}.png`;
-            link.click();
-        }, index * 200);
-    });
-    
-    showToast('Downloading all QR codes...');
-}
-
-async function downloadBatchPDF() {
-    if (AppState.bulkQRCodes.length === 0) return;
-    
-    const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
-    
-    const qrSize = 50;
-    const cols = 3;
-    const rows = 5;
-    const gap = 10;
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const totalWidth = cols * qrSize + (cols - 1) * gap;
-    const marginX = (pageWidth - totalWidth) / 2;
-    const marginY = 20;
-    
-    for (let i = 0; i < AppState.bulkQRCodes.length; i++) {
-        if (i > 0 && i % (cols * rows) === 0) {
-            pdf.addPage();
-        }
-        
-        const pageIndex = i % (cols * rows);
-        const row = Math.floor(pageIndex / cols);
-        const col = pageIndex % cols;
-        
-        const x = marginX + col * (qrSize + gap);
-        const y = marginY + row * (qrSize + gap + 8);
-        
-        pdf.addImage(AppState.bulkQRCodes[i].url, 'PNG', x, y, qrSize, qrSize);
-        
-        pdf.setFontSize(8);
-        const label = AppState.bulkQRCodes[i].data.substring(0, 25);
-        const textWidth = pdf.getTextWidth(label);
-        pdf.text(label, x + (qrSize / 2) - (textWidth / 2), y + qrSize + 5);
-    }
-    
-    pdf.save(`qr-batch-${Date.now()}.pdf`);
-    showToast('PDF downloaded!');
-}
-
-async function printLabels() {
-    if (AppState.bulkQRCodes.length === 0) {
-        showToast('No QR codes to print');
-        return;
-    }
-    
-    const template = LABEL_TEMPLATES[AppState.selectedLabelTemplate];
-    if (!template) {
-        showToast('Please select a label template');
-        return;
-    }
-    
-    const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
-    
-    let labelIndex = 0;
-    
-    for (let i = 0; i < AppState.bulkQRCodes.length; i++) {
-        if (labelIndex >= template.total) {
-            pdf.addPage();
-            labelIndex = 0;
-        }
-        
-        const row = Math.floor(labelIndex / template.cols);
-        const col = labelIndex % template.cols;
-        
-        const x = template.marginLeft + col * (template.labelWidth + template.gapX);
-        const y = template.marginTop + row * (template.labelHeight + template.gapY);
-        
-        const maxQRSize = Math.min(template.labelWidth, template.labelHeight) * 0.8;
-        const qrX = x + template.labelWidth / 2 - maxQRSize / 2;
-        const qrY = y + (template.labelHeight - maxQRSize) / 2;
-        
-        pdf.addImage(AppState.bulkQRCodes[i].url, 'PNG', qrX, qrY, maxQRSize, maxQRSize);
-        
-        labelIndex++;
-    }
-    
-    pdf.save(`qr-labels-${template.name.replace(/\s+/g, '-')}-${Date.now()}.pdf`);
-    showToast(`PDF with ${AppState.bulkQRCodes.length} labels ready!`);
-}
-
 // ========== SCANNER ==========
 async function initScanner() {
     if (AppState.scanner.scanning) return;
@@ -938,6 +324,7 @@ async function initScanner() {
             ).join('');
         }
         
+        // Prefer back camera on mobile
         const backCamera = videoDevices.find(d => d.label.toLowerCase().includes('back'));
         const deviceId = backCamera ? backCamera.deviceId : (videoDevices[0]?.deviceId || null);
         
@@ -1034,6 +421,7 @@ function handleScanResult(data) {
     displayScanResult(data);
     addToScanHistory(data);
     
+    // Visual feedback
     const overlay = document.querySelector('.scanner-overlay');
     if (overlay) {
         overlay.style.background = 'rgba(16, 185, 129, 0.3)';
@@ -1042,6 +430,7 @@ function handleScanResult(data) {
         }, 200);
     }
     
+    // Vibrate on mobile
     if (navigator.vibrate) {
         navigator.vibrate(100);
     }
@@ -1174,14 +563,13 @@ function generateFromScan() {
 function setupDatabaseUpload() {
     const dropZone = document.getElementById('db-drop-zone');
     const fileInput = document.getElementById('db-upload');
-    const browseBtn = dropZone?.querySelector('.btn');
     
     if (!dropZone || !fileInput) {
         console.error('Database upload elements not found');
         return;
     }
     
-    // iOS FIX: Create a visible, properly sized file input
+    // iOS FIX: Make file input cover the entire drop zone
     fileInput.style.cssText = `
         position: absolute;
         top: 0;
@@ -1193,23 +581,13 @@ function setupDatabaseUpload() {
         z-index: 10;
     `;
     
-    // Make drop zone position relative for absolute positioning of input
     dropZone.style.position = 'relative';
     
-    // iOS FIX: Multiple event listeners for maximum compatibility
+    // Multiple event listeners for iOS compatibility
     fileInput.addEventListener('change', handleFileSelect);
     fileInput.addEventListener('input', handleFileSelect);
     
-    // iOS FIX: Also handle click on the browse button specifically
-    if (browseBtn) {
-        browseBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            fileInput.click();
-        });
-    }
-    
-    // Drag and drop (won't work on iOS but good for desktop)
+    // Drag and drop for desktop
     dropZone.addEventListener('dragover', (e) => {
         e.preventDefault();
         dropZone.classList.add('dragover');
@@ -1238,7 +616,6 @@ function handleFileSelect(e) {
     if (file) {
         console.log('File selected:', file.name, file.size);
         handleDatabaseFile(file);
-        // Reset input so same file can be selected again
         e.target.value = '';
     }
 }
@@ -1381,7 +758,6 @@ async function loadDatabaseFromUrl() {
                 throw new Error('Invalid JSON format - expected array');
             }
         } else {
-            // Try to parse as CSV/TSV
             const text = await response.text();
             const fileName = url.split('/').pop().replace(/\.[^/.]+$/, '') || 'imported';
             const result = await parseDatabase(text, fileName);
@@ -1402,13 +778,8 @@ async function loadDatabaseFromUrl() {
     }
 }
 
-function scanDatabaseQR() {
-    showToast('Switch to Scan tab and scan a QR with database URL');
-    switchTab('scan');
-}
-
 // ========================================
-// DATABASE SEARCH - MAIN FEATURE
+// DATABASE SEARCH
 // ========================================
 
 function handleDatabaseSearch(event) {
@@ -1435,11 +806,11 @@ function handleDatabaseSearch(event) {
         item.label.toLowerCase().includes(query) ||
         item.id.toLowerCase().includes(query) ||
         (item.displayText && item.displayText.toLowerCase().includes(query))
-    ).slice(0, 15); // Limit results
+    ).slice(0, 15);
     
     if (matches.length > 0) {
         resultsDiv.innerHTML = matches.map(item => `
-            <div class="search-item" data-id="${escapeHtml(item.id)}" data-label="${escapeHtml(item.label)}" data-display="${escapeHtml(item.displayText || '')}">
+            <div class="search-item" data-id="${escapeHtml(item.id)}" data-label="${escapeHtml(item.label)}">
                 <div class="search-item-label">${escapeHtml(item.label)}</div>
                 <div class="search-item-id">ID: ${escapeHtml(item.id)}${item.displayText ? ' • ' + escapeHtml(item.displayText) : ''}</div>
             </div>
@@ -1447,7 +818,7 @@ function handleDatabaseSearch(event) {
         
         resultsDiv.classList.add('visible');
         
-        // Add click handlers to search results
+        // Click to generate QR
         resultsDiv.querySelectorAll('.search-item').forEach(item => {
             item.addEventListener('click', async () => {
                 const id = item.dataset.id;
@@ -1455,22 +826,12 @@ function handleDatabaseSearch(event) {
                 
                 console.log('Selected from database:', { id, label });
                 
-                // Generate QR code for this item
                 try {
                     const errorLevel = document.getElementById('error-level')?.value || 'M';
-                    const style = document.getElementById('qr-style')?.value || 'square';
                     const fgColor = document.getElementById('fg-color')?.value || '#000000';
                     const bgColor = document.getElementById('bg-color')?.value || '#ffffff';
-                    const templateId = document.getElementById('template-select')?.value || '';
                     
-                    let qrDataUrl;
-                    
-                    if (templateId && QR_TEMPLATES[templateId]) {
-                        qrDataUrl = await generateTemplatedQR(id, templateId, errorLevel, style);
-                    } else {
-                        qrDataUrl = await generateBasicQR(id, errorLevel, fgColor, bgColor, style);
-                    }
-                    
+                    const qrDataUrl = await generateBasicQR(id, errorLevel, fgColor, bgColor);
                     displayQRResult(qrDataUrl, id);
                     addToHistory(id);
                     
@@ -1521,7 +882,7 @@ function updateDatabaseUI() {
                 `;
             }).join('');
             
-            // Attach event handlers
+            // Event handlers
             dbList.querySelectorAll('.activate-db').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     e.stopPropagation();
@@ -1557,7 +918,7 @@ function updateDatabaseUI() {
         const infoEl = document.getElementById('active-db-info');
         
         if (nameEl) nameEl.textContent = activeDb.name;
-        if (infoEl) infoEl.textContent = `${activeDb.rows} records • Created ${new Date(activeDb.created).toLocaleDateString()}`;
+        if (infoEl) infoEl.textContent = `${activeDb.rows} records`;
         
         if (activeCard) activeCard.classList.remove('hidden');
         if (searchContainer) searchContainer.classList.remove('hidden');
@@ -1584,56 +945,19 @@ function exportDatabase() {
     showToast('Database exported');
 }
 
-async function generateDatabaseQR() {
-    if (!AppState.activeDbId) return;
-    
-    showToast('Host your JSON file online and share that URL as a QR code');
-}
-
 // ========== UI UPDATE ==========
 function updateUI() {
     updateHistoryUI();
     updateScanHistoryUI();
     updateDatabaseUI();
-    
-    document.querySelectorAll('.label-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.template === AppState.selectedLabelTemplate);
-    });
 }
 
 // ========== UTILITIES ==========
-function loadImage(src) {
-    return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = reject;
-        img.src = src;
-    });
-}
-
-function roundRect(ctx, x, y, width, height, radius) {
-    ctx.beginPath();
-    ctx.moveTo(x + radius, y);
-    ctx.lineTo(x + width - radius, y);
-    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-    ctx.lineTo(x + width, y + height - radius);
-    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-    ctx.lineTo(x + radius, y + height);
-    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-    ctx.lineTo(x, y + radius);
-    ctx.quadraticCurveTo(x, y, x + radius, y);
-    ctx.closePath();
-}
-
 function escapeHtml(text) {
     if (!text) return '';
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
-}
-
-function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function showToast(message, duration = 3000) {
@@ -1653,5 +977,4 @@ window.addEventListener('beforeunload', () => {
     stopScanner();
 });
 
-// Log ready status
 console.log('QR Generator Pro script loaded');
