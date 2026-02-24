@@ -1,6 +1,7 @@
 // ========================================
 // QR GENERATOR PRO - WITH CHAIN TRANSFER
 // + Add Entry & Merge Databases
+// + Improved QR Scanning
 // ========================================
 
 const AppState = {
@@ -375,11 +376,9 @@ function updateDatabaseTab() {
     
     const noDbMsg = document.getElementById('no-db-message');
     const searchSection = document.getElementById('db-search-section');
-    const addEntryBtn = document.getElementById('show-add-entry');
     
     if (noDbMsg) noDbMsg.style.display = hasDb ? 'none' : 'block';
     if (searchSection) searchSection.classList.toggle('hidden', !hasDb);
-    if (addEntryBtn) addEntryBtn.style.display = hasDb ? 'block' : 'none';
     
     if (hasDb) {
         const db = AppState.databases[AppState.activeDbId];
@@ -472,7 +471,6 @@ function showAddEntryForm() {
     
     if (!form || !fields) return;
     
-    // Build form fields based on database columns
     fields.innerHTML = `
         <div class="form-group">
             <label for="entry-label">Label *</label>
@@ -511,13 +509,11 @@ function saveNewEntry() {
     
     const db = AppState.databases[AppState.activeDbId];
     
-    // Check for duplicate ID
     if (db.data.some(item => item.id === id)) {
         showToast('An entry with this ID already exists');
         return;
     }
     
-    // Add new entry
     db.data.push({
         label: label,
         id: id,
@@ -529,6 +525,7 @@ function saveNewEntry() {
     
     hideAddEntryForm();
     updateDatabaseTab();
+    updateSettingsUI();
     showToast(`Added "${label}"`);
 }
 
@@ -592,12 +589,35 @@ async function startScanner(deviceId) {
             AppState.scanner.stream.getTracks().forEach(t => t.stop());
         }
         
-        const constraints = { video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false };
-        if (deviceId) constraints.video.deviceId = { exact: deviceId };
-        else constraints.video.facingMode = { ideal: 'environment' };
+        const constraints = {
+            video: {
+                width: { ideal: 1920, min: 640 },
+                height: { ideal: 1080, min: 480 },
+                facingMode: { ideal: 'environment' },
+                focusMode: { ideal: 'continuous' },
+                exposureMode: { ideal: 'continuous' },
+                whiteBalanceMode: { ideal: 'continuous' }
+            },
+            audio: false
+        };
+        
+        if (deviceId) {
+            constraints.video.deviceId = { exact: deviceId };
+        }
         
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
         AppState.scanner.stream = stream;
+        
+        const track = stream.getVideoTracks()[0];
+        const capabilities = track.getCapabilities?.() || {};
+        
+        if (capabilities.focusMode?.includes('continuous')) {
+            try {
+                await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+            } catch (e) {
+                console.log('Could not set continuous focus');
+            }
+        }
         
         const video = document.getElementById('scanner-video');
         video.srcObject = stream;
@@ -632,21 +652,71 @@ function startScanLoop() {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     let lastChainPart = 0;
+    let lastScannedData = '';
+    let lastScanTime = 0;
+    
+    function tryDecode(imageData) {
+        let code = jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: 'attemptBoth'
+        });
+        if (code) return code;
+        
+        code = jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: 'dontInvert'
+        });
+        if (code) return code;
+        
+        return null;
+    }
+    
+    function processFrame() {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0);
+        
+        // Try full frame
+        let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        let code = tryDecode(imageData);
+        if (code) return code;
+        
+        // Try center crop (helps with logos)
+        const cropSize = Math.min(canvas.width, canvas.height) * 0.9;
+        const cropX = (canvas.width - cropSize) / 2;
+        const cropY = (canvas.height - cropSize) / 2;
+        
+        imageData = ctx.getImageData(cropX, cropY, cropSize, cropSize);
+        code = tryDecode(imageData);
+        if (code) return code;
+        
+        // Try with increased contrast
+        ctx.drawImage(video, 0, 0);
+        imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        
+        const data = imageData.data;
+        for (let i = 0; i < data.length; i += 4) {
+            const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+            const boosted = avg > 128 ? 255 : 0;
+            data[i] = boosted;
+            data[i + 1] = boosted;
+            data[i + 2] = boosted;
+        }
+        
+        code = tryDecode(imageData);
+        if (code) return code;
+        
+        return null;
+    }
     
     function scan() {
         if (!AppState.scanner.scanning) return;
         
         if (video.readyState >= 2 && video.videoWidth) {
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            ctx.drawImage(video, 0, 0);
-            
             try {
-                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
+                const code = processFrame();
                 
                 if (code?.data) {
-                    // For chain QRs, check if it's a different part
+                    const now = Date.now();
+                    
                     if (code.data.startsWith('QRP:1:')) {
                         const parts = code.data.split(':');
                         const partNum = parseInt(parts[3]);
@@ -655,11 +725,15 @@ function startScanLoop() {
                             lastChainPart = partNum;
                             handleScanResult(code.data);
                         }
-                    } else {
+                    } else if (code.data !== lastScannedData || now - lastScanTime > 2000) {
+                        lastScannedData = code.data;
+                        lastScanTime = now;
                         handleScanResult(code.data);
                     }
                 }
-            } catch {}
+            } catch (e) {
+                console.warn('Scan error:', e);
+            }
         }
         
         AppState.scanner.animationId = requestAnimationFrame(scan);
@@ -681,7 +755,6 @@ function stopScanner() {
 let lastScanned = '', lastScanTime = 0;
 
 function handleScanResult(data) {
-    // Check if this is a chain transfer QR
     if (data.startsWith('QRP:1:')) {
         handleChainQR(data);
         return;
@@ -713,6 +786,8 @@ async function scanFromImage(e) {
     const file = e.target.files?.[0];
     if (!file) return;
     
+    showToast('Scanning image...');
+    
     try {
         const dataUrl = await new Promise((res, rej) => {
             const r = new FileReader();
@@ -729,18 +804,102 @@ async function scanFromImage(e) {
         });
         
         const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        function tryDecode(imageData) {
+            let code = jsQR(imageData.data, imageData.width, imageData.height, {
+                inversionAttempts: 'attemptBoth'
+            });
+            if (code) return code;
+            
+            code = jsQR(imageData.data, imageData.width, imageData.height, {
+                inversionAttempts: 'dontInvert'
+            });
+            return code;
+        }
+        
+        // Attempt 1: Original size
         canvas.width = img.width;
         canvas.height = img.height;
-        const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0);
         
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const code = jsQR(imageData.data, imageData.width, imageData.height);
+        let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        let code = tryDecode(imageData);
         
-        if (code?.data) handleScanResult(code.data);
-        else showToast('No QR found');
+        // Attempt 2: Scale to 1000px if larger
+        if (!code && (img.width > 1000 || img.height > 1000)) {
+            const scale = 1000 / Math.max(img.width, img.height);
+            canvas.width = img.width * scale;
+            canvas.height = img.height * scale;
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            
+            imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            code = tryDecode(imageData);
+        }
         
-    } catch { showToast('Error reading image'); }
+        // Attempt 3: Scale up if small
+        if (!code && img.width < 500) {
+            const scale = 500 / img.width;
+            canvas.width = img.width * scale;
+            canvas.height = img.height * scale;
+            ctx.imageSmoothingEnabled = false;
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            
+            imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            code = tryDecode(imageData);
+        }
+        
+        // Attempt 4: High contrast black/white
+        if (!code) {
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.drawImage(img, 0, 0);
+            
+            imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+            
+            for (let i = 0; i < data.length; i += 4) {
+                const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                const val = avg > 127 ? 255 : 0;
+                data[i] = val;
+                data[i + 1] = val;
+                data[i + 2] = val;
+            }
+            
+            code = tryDecode(imageData);
+        }
+        
+        // Attempt 5: Different threshold
+        if (!code) {
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.drawImage(img, 0, 0);
+            
+            imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+            
+            for (let i = 0; i < data.length; i += 4) {
+                const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                const val = avg > 100 ? 255 : 0;
+                data[i] = val;
+                data[i + 1] = val;
+                data[i + 2] = val;
+            }
+            
+            code = tryDecode(imageData);
+        }
+        
+        if (code?.data) {
+            handleScanResult(code.data);
+            showToast('QR code found!');
+        } else {
+            showToast('No QR code found. Try a clearer image.');
+        }
+        
+    } catch (err) {
+        console.error('Image scan error:', err);
+        showToast('Error reading image');
+    }
     
     e.target.value = '';
 }
@@ -1129,7 +1288,6 @@ function showMergeModal() {
         return;
     }
     
-    // Populate dropdown with databases (excluding active one)
     select.innerHTML = keys
         .filter(id => id !== AppState.activeDbId)
         .map(id => {
@@ -1159,14 +1317,11 @@ function performMerge() {
     
     if (!targetDb || !sourceDb) return;
     
-    // Get existing IDs in target
     const existingIds = new Set(targetDb.data.map(item => item.id));
     
-    // Count stats
     let added = 0;
     let skipped = 0;
     
-    // Add unique entries from source
     sourceDb.data.forEach(item => {
         if (existingIds.has(item.id)) {
             skipped++;
@@ -1181,7 +1336,6 @@ function performMerge() {
         }
     });
     
-    // Update row count
     targetDb.rows = targetDb.data.length;
     
     saveState();
@@ -1628,4 +1782,4 @@ function showToast(msg, duration = 2500) {
 window.addEventListener('beforeunload', stopScanner);
 document.addEventListener('visibilitychange', () => { if (document.hidden) stopScanner(); });
 
-console.log('App loaded with Chain Transfer + Add Entry + Merge');
+console.log('App loaded');
