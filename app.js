@@ -549,14 +549,12 @@ function startScanLoop() {
     const video = document.getElementById('scanner-video');
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    let lastScan = 0;
+    let lastChainPart = 0;
     
     function scan() {
         if (!AppState.scanner.scanning) return;
         
-        const now = Date.now();
-        if (now - lastScan >= 250 && video.readyState >= 2 && video.videoWidth) {
-            lastScan = now;
+        if (video.readyState >= 2 && video.videoWidth) {
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
             ctx.drawImage(video, 0, 0);
@@ -564,7 +562,21 @@ function startScanLoop() {
             try {
                 const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
                 const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
-                if (code?.data) handleScanResult(code.data);
+                
+                if (code?.data) {
+                    // For chain QRs, check if it's a different part
+                    if (code.data.startsWith('QRP:1:')) {
+                        const parts = code.data.split(':');
+                        const partNum = parseInt(parts[3]);
+                        
+                        if (partNum !== lastChainPart) {
+                            lastChainPart = partNum;
+                            handleScanResult(code.data);
+                        }
+                    } else {
+                        handleScanResult(code.data);
+                    }
+                }
             } catch {}
         }
         
@@ -572,6 +584,7 @@ function startScanLoop() {
     }
     scan();
 }
+
 
 function stopScanner() {
     AppState.scanner.scanning = false;
@@ -1477,6 +1490,3 @@ window.addEventListener('beforeunload', stopScanner);
 document.addEventListener('visibilitychange', () => { if (document.hidden) stopScanner(); });
 
 console.log('App loaded with Chain Transfer');
-
-
-
