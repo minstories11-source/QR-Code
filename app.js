@@ -1,6 +1,6 @@
 // ========================================
-// QR GENERATOR PRO - CLEAN & SIMPLE
-// Separate Database Search Tab
+// QR GENERATOR PRO - MOBILE FIXED
+// Database + iPhone Scanner
 // ========================================
 
 const AppState = {
@@ -31,8 +31,20 @@ document.addEventListener('DOMContentLoaded', () => {
 function loadState() {
     try {
         const saved = localStorage.getItem('qrGeneratorState');
-        if (saved) Object.assign(AppState, JSON.parse(saved));
+        if (saved) {
+            const parsed = JSON.parse(saved);
+            // Merge carefully
+            AppState.databases = parsed.databases || {};
+            AppState.activeDbId = parsed.activeDbId || null;
+            AppState.history = parsed.history || [];
+            AppState.scanHistory = parsed.scanHistory || [];
+            AppState.theme = parsed.theme || 'light';
+        }
         applyTheme(AppState.theme);
+        console.log('State loaded:', {
+            databases: Object.keys(AppState.databases).length,
+            activeDbId: AppState.activeDbId
+        });
     } catch (e) {
         console.error('Load state error:', e);
     }
@@ -40,13 +52,15 @@ function loadState() {
 
 function saveState() {
     try {
-        localStorage.setItem('qrGeneratorState', JSON.stringify({
+        const toSave = {
             databases: AppState.databases,
             activeDbId: AppState.activeDbId,
             history: AppState.history,
             scanHistory: AppState.scanHistory,
             theme: AppState.theme
-        }));
+        };
+        localStorage.setItem('qrGeneratorState', JSON.stringify(toSave));
+        console.log('State saved');
     } catch (e) {
         console.error('Save state error:', e);
     }
@@ -84,6 +98,7 @@ function setupEventListeners() {
     document.getElementById('copy-scan')?.addEventListener('click', copyScanResult);
     document.getElementById('open-url')?.addEventListener('click', openScannedUrl);
     document.getElementById('generate-from-scan')?.addEventListener('click', generateFromScan);
+    document.getElementById('start-scanner-btn')?.addEventListener('click', startScannerManually);
     
     // Settings tab
     setupDatabaseUpload();
@@ -93,13 +108,28 @@ function setupEventListeners() {
 
 // ========== TABS ==========
 function switchTab(tabName) {
+    console.log('Switching to tab:', tabName);
+    
     document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tabName));
     document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === `${tabName}-tab`));
     
-    if (tabName === 'scan') initScanner();
-    else stopScanner();
+    // Always refresh database tab when switching to it
+    if (tabName === 'database') {
+        // Re-load state to ensure we have latest data
+        loadState();
+        updateDatabaseTab();
+    }
     
-    if (tabName === 'database') updateDatabaseTab();
+    if (tabName === 'scan') {
+        // Don't auto-start, show button instead for iOS
+        showScannerUI();
+    } else {
+        stopScanner();
+    }
+    
+    if (tabName === 'settings') {
+        updateSettingsUI();
+    }
 }
 
 // ========== THEME ==========
@@ -268,14 +298,24 @@ function updateHistoryUI() {
 
 // ========== DATABASE TAB ==========
 function updateDatabaseTab() {
+    console.log('Updating database tab, activeDbId:', AppState.activeDbId);
+    console.log('Databases:', Object.keys(AppState.databases));
+    
     const hasDb = AppState.activeDbId && AppState.databases[AppState.activeDbId];
     
-    document.getElementById('no-db-message')?.classList.toggle('hidden', hasDb);
-    document.getElementById('db-search-section')?.classList.toggle('hidden', !hasDb);
+    const noDbMsg = document.getElementById('no-db-message');
+    const searchSection = document.getElementById('db-search-section');
+    
+    if (noDbMsg) noDbMsg.classList.toggle('hidden', hasDb);
+    if (searchSection) searchSection.classList.toggle('hidden', !hasDb);
     
     if (hasDb) {
         const db = AppState.databases[AppState.activeDbId];
-        document.getElementById('db-info-text').textContent = `${db.name} • ${db.rows} items`;
+        const infoText = document.getElementById('db-info-text');
+        if (infoText) infoText.textContent = `${db.name} • ${db.rows} items`;
+        console.log('Database loaded:', db.name, db.rows, 'items');
+    } else {
+        console.log('No active database');
     }
 }
 
@@ -286,13 +326,13 @@ function handleDatabaseSearch(e) {
     const qrResult = document.getElementById('db-qr-result');
     
     // Show/hide clear button
-    clearBtn?.classList.toggle('hidden', !query);
+    if (clearBtn) clearBtn.classList.toggle('hidden', !query);
     
     // Hide QR when searching
-    qrResult?.classList.add('hidden');
+    if (qrResult) qrResult.classList.add('hidden');
     
     if (!query || !AppState.activeDbId) {
-        resultsDiv.innerHTML = '';
+        if (resultsDiv) resultsDiv.innerHTML = '';
         return;
     }
     
@@ -325,15 +365,18 @@ function handleDatabaseSearch(e) {
 function clearSearch() {
     const input = document.getElementById('db-search');
     if (input) input.value = '';
-    document.getElementById('search-results').innerHTML = '';
+    const results = document.getElementById('search-results');
+    if (results) results.innerHTML = '';
     document.getElementById('clear-search')?.classList.add('hidden');
     document.getElementById('db-qr-result')?.classList.add('hidden');
 }
 
 async function selectDatabaseItem(id, label) {
     // Clear search
-    document.getElementById('db-search').value = '';
-    document.getElementById('search-results').innerHTML = '';
+    const searchInput = document.getElementById('db-search');
+    if (searchInput) searchInput.value = '';
+    const results = document.getElementById('search-results');
+    if (results) results.innerHTML = '';
     document.getElementById('clear-search')?.classList.add('hidden');
     
     try {
@@ -355,52 +398,200 @@ async function selectDatabaseItem(id, label) {
     }
 }
 
-// ========== SCANNER ==========
+// ========================================
+// SCANNER - iOS COMPATIBLE
+// ========================================
+
+function showScannerUI() {
+    const video = document.getElementById('scanner-video');
+    const startBtn = document.getElementById('start-scanner-btn');
+    const statusEl = document.getElementById('scanner-status');
+    
+    // Check if already scanning
+    if (AppState.scanner.scanning) {
+        if (startBtn) startBtn.classList.add('hidden');
+        return;
+    }
+    
+    // Show start button on mobile (especially iOS)
+    if (startBtn) startBtn.classList.remove('hidden');
+    if (statusEl) statusEl.textContent = 'Tap button to start camera';
+}
+
+async function startScannerManually() {
+    const startBtn = document.getElementById('start-scanner-btn');
+    const statusEl = document.getElementById('scanner-status');
+    
+    if (startBtn) startBtn.classList.add('hidden');
+    if (statusEl) statusEl.textContent = 'Starting camera...';
+    
+    await initScanner();
+}
+
 async function initScanner() {
     if (AppState.scanner.scanning) return;
     
+    const statusEl = document.getElementById('scanner-status');
+    
     try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videos = devices.filter(d => d.kind === 'videoinput');
+        // Check if getUserMedia is supported
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            throw new Error('Camera not supported on this browser');
+        }
         
-        const sel = document.getElementById('camera-select');
-        if (sel) {
-            sel.innerHTML = videos.map((d, i) => 
+        // Request camera permission first (important for iOS)
+        if (statusEl) statusEl.textContent = 'Requesting camera permission...';
+        
+        // Get available cameras
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(d => d.kind === 'videoinput');
+        
+        console.log('Available cameras:', videoDevices.length);
+        
+        if (videoDevices.length === 0) {
+            throw new Error('No camera found');
+        }
+        
+        // Update camera selector
+        const selector = document.getElementById('camera-select');
+        if (selector) {
+            selector.innerHTML = videoDevices.map((d, i) => 
                 `<option value="${d.deviceId}">${d.label || `Camera ${i + 1}`}</option>`
             ).join('');
         }
         
-        const back = videos.find(d => d.label.toLowerCase().includes('back'));
-        await startCamera(back?.deviceId || videos[0]?.deviceId);
+        // Try to find back camera (preferred for QR scanning)
+        const backCamera = videoDevices.find(d => 
+            d.label.toLowerCase().includes('back') || 
+            d.label.toLowerCase().includes('rear') ||
+            d.label.toLowerCase().includes('environment')
+        );
+        
+        const preferredDeviceId = backCamera?.deviceId || videoDevices[0]?.deviceId;
+        
+        await startCamera(preferredDeviceId);
+        
+        if (statusEl) statusEl.textContent = '';
+        
     } catch (e) {
-        console.error(e);
-        showToast('Camera error');
+        console.error('Scanner init error:', e);
+        if (statusEl) statusEl.textContent = `Error: ${e.message}`;
+        showToast('Camera error: ' + e.message);
+        
+        // Show start button again
+        const startBtn = document.getElementById('start-scanner-btn');
+        if (startBtn) startBtn.classList.remove('hidden');
     }
 }
 
 async function startCamera(deviceId) {
+    const video = document.getElementById('scanner-video');
+    const statusEl = document.getElementById('scanner-status');
+    
+    if (!video) {
+        console.error('Video element not found');
+        return;
+    }
+    
     try {
+        // Stop existing stream
         if (AppState.scanner.stream) {
-            AppState.scanner.stream.getTracks().forEach(t => t.stop());
+            AppState.scanner.stream.getTracks().forEach(track => {
+                track.stop();
+                console.log('Stopped track:', track.kind);
+            });
+            AppState.scanner.stream = null;
         }
         
-        AppState.scanner.stream = await navigator.mediaDevices.getUserMedia({
-            video: { deviceId: deviceId ? { exact: deviceId } : undefined, facingMode: 'environment' }
+        if (statusEl) statusEl.textContent = 'Accessing camera...';
+        
+        // iOS-friendly constraints
+        const constraints = {
+            video: {
+                width: { ideal: 1280, max: 1920 },
+                height: { ideal: 720, max: 1080 },
+                facingMode: deviceId ? undefined : 'environment'
+            },
+            audio: false
+        };
+        
+        // Add deviceId if specified
+        if (deviceId) {
+            constraints.video.deviceId = { exact: deviceId };
+        }
+        
+        console.log('Requesting camera with constraints:', constraints);
+        
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        
+        console.log('Got stream:', stream.getVideoTracks().length, 'video tracks');
+        
+        AppState.scanner.stream = stream;
+        
+        // Set video source
+        video.srcObject = stream;
+        
+        // Important for iOS - need to call play() explicitly
+        video.setAttribute('playsinline', 'true');
+        video.setAttribute('autoplay', 'true');
+        video.muted = true;
+        
+        // Wait for video to be ready
+        await new Promise((resolve, reject) => {
+            video.onloadedmetadata = () => {
+                console.log('Video metadata loaded:', video.videoWidth, 'x', video.videoHeight);
+                resolve();
+            };
+            video.onerror = (e) => {
+                console.error('Video error:', e);
+                reject(new Error('Video failed to load'));
+            };
+            // Timeout
+            setTimeout(() => reject(new Error('Video load timeout')), 10000);
         });
         
-        const video = document.getElementById('scanner-video');
-        if (video) video.srcObject = AppState.scanner.stream;
+        // Play video
+        await video.play();
+        console.log('Video playing');
         
+        if (statusEl) statusEl.textContent = '';
+        
+        // Hide start button
+        const startBtn = document.getElementById('start-scanner-btn');
+        if (startBtn) startBtn.classList.add('hidden');
+        
+        // Start scanning
         AppState.scanner.scanning = true;
         scanLoop();
+        
     } catch (e) {
-        console.error(e);
-        showToast('Camera failed');
+        console.error('Start camera error:', e);
+        
+        let errorMsg = e.message;
+        if (e.name === 'NotAllowedError') {
+            errorMsg = 'Camera permission denied. Please allow camera access.';
+        } else if (e.name === 'NotFoundError') {
+            errorMsg = 'No camera found';
+        } else if (e.name === 'NotReadableError') {
+            errorMsg = 'Camera is in use by another app';
+        } else if (e.name === 'OverconstrainedError') {
+            errorMsg = 'Camera constraints not satisfied';
+        }
+        
+        if (statusEl) statusEl.textContent = errorMsg;
+        showToast(errorMsg);
+        
+        // Show start button again
+        const startBtn = document.getElementById('start-scanner-btn');
+        if (startBtn) startBtn.classList.remove('hidden');
     }
 }
 
 function switchCamera(e) {
-    startCamera(e.target.value);
+    const deviceId = e.target.value;
+    if (deviceId) {
+        startCamera(deviceId);
+    }
 }
 
 function scanLoop() {
@@ -410,89 +601,154 @@ function scanLoop() {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     
-    const scan = () => {
-        if (!AppState.scanner.scanning) return;
+    let lastScanTime = 0;
+    const scanInterval = 200; // Scan every 200ms to reduce CPU usage
+    
+    const scan = (timestamp) => {
+        if (!AppState.scanner.scanning) {
+            console.log('Scanning stopped');
+            return;
+        }
         
-        if (video.videoWidth) {
+        // Throttle scanning
+        if (timestamp - lastScanTime < scanInterval) {
+            AppState.scanner.animationId = requestAnimationFrame(scan);
+            return;
+        }
+        lastScanTime = timestamp;
+        
+        if (video.readyState === video.HAVE_ENOUGH_DATA && video.videoWidth > 0) {
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
-            ctx.drawImage(video, 0, 0);
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             
-            const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'dontInvert' });
-            
-            if (code) {
-                handleScanResult(code.data);
+            try {
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                    inversionAttempts: 'dontInvert'
+                });
+                
+                if (code && code.data) {
+                    console.log('QR Code found:', code.data);
+                    handleScanResult(code.data);
+                }
+            } catch (e) {
+                console.error('Scan error:', e);
             }
         }
         
         AppState.scanner.animationId = requestAnimationFrame(scan);
     };
-    scan();
+    
+    console.log('Starting scan loop');
+    AppState.scanner.animationId = requestAnimationFrame(scan);
 }
 
 function stopScanner() {
+    console.log('Stopping scanner');
     AppState.scanner.scanning = false;
-    if (AppState.scanner.animationId) cancelAnimationFrame(AppState.scanner.animationId);
+    
+    if (AppState.scanner.animationId) {
+        cancelAnimationFrame(AppState.scanner.animationId);
+        AppState.scanner.animationId = null;
+    }
+    
     if (AppState.scanner.stream) {
-        AppState.scanner.stream.getTracks().forEach(t => t.stop());
+        AppState.scanner.stream.getTracks().forEach(track => {
+            track.stop();
+            console.log('Stopped track:', track.kind);
+        });
         AppState.scanner.stream = null;
+    }
+    
+    // Clear video
+    const video = document.getElementById('scanner-video');
+    if (video) {
+        video.srcObject = null;
     }
 }
 
 function handleScanResult(data) {
+    // Prevent duplicate scans
+    if (AppState.currentScan === data) return;
+    
+    console.log('Scan result:', data);
+    
     document.getElementById('scan-data').textContent = data;
     document.getElementById('scan-result').classList.remove('hidden');
     AppState.currentScan = data;
     
+    // Add to history
     AppState.scanHistory = [data, ...AppState.scanHistory.filter(i => i !== data)].slice(0, 20);
     saveState();
     updateScanHistoryUI();
     
-    // Flash
+    // Visual feedback
     const overlay = document.querySelector('.scanner-overlay');
     if (overlay) {
-        overlay.style.background = 'rgba(16, 185, 129, 0.3)';
-        setTimeout(() => overlay.style.background = 'transparent', 200);
+        overlay.style.background = 'rgba(16, 185, 129, 0.4)';
+        setTimeout(() => overlay.style.background = 'transparent', 300);
     }
     
-    navigator.vibrate?.(100);
+    // Vibrate
+    if (navigator.vibrate) {
+        navigator.vibrate(100);
+    }
+    
+    // Scroll to result
+    document.getElementById('scan-result')?.scrollIntoView({ behavior: 'smooth' });
+    
+    // Reset current scan after delay to allow rescanning same code
+    setTimeout(() => {
+        AppState.currentScan = null;
+    }, 2000);
 }
 
 async function scanFromImage(e) {
     const file = e.target.files?.[0];
     if (!file) return;
     
+    console.log('Scanning from image:', file.name);
+    
     try {
-        const url = await new Promise((res, rej) => {
-            const r = new FileReader();
-            r.onload = e => res(e.target.result);
-            r.onerror = rej;
-            r.readAsDataURL(file);
+        // Read file
+        const dataUrl = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
         });
         
-        const img = await new Promise((res, rej) => {
-            const i = new Image();
-            i.onload = () => res(i);
-            i.onerror = rej;
-            i.src = url;
+        // Create image
+        const img = await new Promise((resolve, reject) => {
+            const image = new Image();
+            image.onload = () => resolve(image);
+            image.onerror = reject;
+            image.src = dataUrl;
         });
         
+        // Draw to canvas
         const canvas = document.createElement('canvas');
         canvas.width = img.width;
         canvas.height = img.height;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0);
         
+        // Scan
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const code = jsQR(imageData.data, imageData.width, imageData.height);
         
-        if (code) handleScanResult(code.data);
-        else showToast('No QR found');
-    } catch {
+        if (code && code.data) {
+            handleScanResult(code.data);
+        } else {
+            showToast('No QR code found in image');
+        }
+    } catch (err) {
+        console.error('Image scan error:', err);
         showToast('Error reading image');
     }
     
+    // Reset input
     e.target.value = '';
 }
 
@@ -545,190 +801,327 @@ function generateFromScan() {
     switchTab('generate');
 }
 
-// ========== SETTINGS - DATABASE UPLOAD ==========
+// ========================================
+// SETTINGS - DATABASE UPLOAD (iOS FIXED)
+// ========================================
+
 function setupDatabaseUpload() {
-    const input = document.getElementById('db-upload');
-    if (!input) return;
+    const dropZone = document.getElementById('db-drop-zone');
+    const fileInput = document.getElementById('db-upload');
     
-    input.addEventListener('change', handleFileSelect);
-    input.addEventListener('input', handleFileSelect);
+    if (!fileInput) {
+        console.error('File input not found');
+        return;
+    }
+    
+    // iOS needs these event listeners
+    fileInput.addEventListener('change', handleFileSelect);
+    fileInput.addEventListener('input', handleFileSelect);
+    
+    // Click on drop zone should trigger file input
+    if (dropZone) {
+        dropZone.addEventListener('click', (e) => {
+            // Don't trigger if clicking the input itself
+            if (e.target !== fileInput) {
+                fileInput.click();
+            }
+        });
+        
+        // Drag and drop for desktop
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+        
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+        
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer?.files?.[0]) {
+                handleDatabaseFile(e.dataTransfer.files[0]);
+            }
+        });
+    }
+    
+    console.log('Database upload setup complete');
 }
 
 function handleFileSelect(e) {
+    console.log('File select event:', e.type);
     const file = e.target?.files?.[0];
     if (file) {
+        console.log('File selected:', file.name, file.size, 'bytes');
         handleDatabaseFile(file);
-        e.target.value = '';
+        // Reset input
+        setTimeout(() => { e.target.value = ''; }, 100);
     }
 }
 
 async function handleDatabaseFile(file) {
     const status = document.getElementById('upload-status');
-    status.className = 'status';
-    status.textContent = '📖 Reading...';
-    status.classList.remove('hidden');
+    if (status) {
+        status.className = 'status';
+        status.textContent = '📖 Reading file...';
+        status.classList.remove('hidden');
+    }
     
     try {
         const content = await file.text();
         const name = file.name.replace(/\.[^/.]+$/, '');
+        console.log('Parsing database:', name, content.length, 'chars');
+        
         const result = await parseDatabase(content, name);
         
-        status.className = 'status success';
-        status.textContent = `✓ Loaded ${result.rows} items from ${name}`;
+        if (status) {
+            status.className = 'status success';
+            status.textContent = `✓ Loaded ${result.rows} items from ${name}`;
+        }
+        
         showToast(`Database loaded: ${result.rows} items`);
         updateSettingsUI();
-    } catch (e) {
-        console.error(e);
-        status.className = 'status error';
-        status.textContent = `❌ ${e.message}`;
+        updateDatabaseTab();
+        
+    } catch (err) {
+        console.error('Database error:', err);
+        if (status) {
+            status.className = 'status error';
+            status.textContent = `❌ ${err.message}`;
+        }
+        showToast('Error: ' + err.message);
     }
 }
 
 async function parseDatabase(content, name) {
     const lines = content.split('\n').filter(l => l.trim());
-    if (lines.length < 2) throw new Error('Need header + data rows');
     
-    const delim = content.includes('\t') ? '\t' : ',';
+    if (lines.length < 2) {
+        throw new Error('File needs header row + at least 1 data row');
+    }
+    
+    // Detect delimiter
+    const firstLine = lines[0];
+    const delim = firstLine.includes('\t') ? '\t' : ',';
+    console.log('Using delimiter:', delim === '\t' ? 'TAB' : 'COMMA');
+    
     const data = [];
     
+    // Parse data rows (skip header)
     for (let i = 1; i < lines.length; i++) {
-        const parts = lines[i].split(delim).map(p => p.trim().replace(/^"|"$/g, ''));
+        const line = lines[i].trim();
+        if (!line) continue;
+        
+        const parts = line.split(delim).map(p => p.trim().replace(/^"|"$/g, ''));
+        
         if (parts.length >= 2 && parts[0] && parts[1]) {
-            data.push({ label: parts[0], id: parts[1], displayText: parts[2] || '' });
+            data.push({
+                label: parts[0],
+                id: parts[1],
+                displayText: parts[2] || ''
+            });
         }
     }
     
-    if (!data.length) throw new Error('No valid data found');
+    console.log('Parsed rows:', data.length);
     
-    const id = Date.now().toString(36) + Math.random().toString(36).substr(2);
-    AppState.databases[id] = { name, data, created: Date.now(), rows: data.length };
-    AppState.activeDbId = id;
+    if (data.length === 0) {
+        throw new Error('No valid data rows found. Format: Label,ID,Description');
+    }
+    
+    // Save to state
+    const dbId = Date.now().toString(36) + Math.random().toString(36).substr(2);
+    
+    AppState.databases[dbId] = {
+        name: name,
+        data: data,
+        created: Date.now(),
+        rows: data.length
+    };
+    
+    AppState.activeDbId = dbId;
+    
+    // Save immediately
     saveState();
+    
+    console.log('Database saved:', dbId, 'Active:', AppState.activeDbId);
     
     return { rows: data.length };
 }
 
 async function loadDatabaseFromUrl() {
-    const url = document.getElementById('db-url')?.value.trim();
-    if (!url) return showToast('Enter a URL');
+    const urlInput = document.getElementById('db-url');
+    const url = urlInput?.value.trim();
+    
+    if (!url) {
+        showToast('Please enter a URL');
+        return;
+    }
     
     const status = document.getElementById('upload-status');
-    status.className = 'status';
-    status.textContent = '🌐 Loading...';
-    status.classList.remove('hidden');
+    if (status) {
+        status.className = 'status';
+        status.textContent = '🌐 Loading from URL...';
+        status.classList.remove('hidden');
+    }
     
     try {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         
-        const text = await res.text();
+        const text = await response.text();
         const name = url.split('/').pop()?.replace(/\.[^/.]+$/, '') || 'imported';
         
         // Try JSON first
         try {
             const json = JSON.parse(text);
             if (Array.isArray(json)) {
-                const id = Date.now().toString(36) + Math.random().toString(36).substr(2);
-                AppState.databases[id] = {
-                    name,
-                    data: json.map(i => ({ label: i.label || i.name || '', id: i.id || i.code || '', displayText: i.displayText || '' })),
+                const dbId = Date.now().toString(36) + Math.random().toString(36).substr(2);
+                
+                AppState.databases[dbId] = {
+                    name: name,
+                    data: json.map(item => ({
+                        label: item.label || item.name || item.title || '',
+                        id: item.id || item.code || '',
+                        displayText: item.displayText || item.description || ''
+                    })),
                     created: Date.now(),
                     rows: json.length
                 };
-                AppState.activeDbId = id;
+                
+                AppState.activeDbId = dbId;
                 saveState();
                 
-                status.className = 'status success';
-                status.textContent = `✓ Loaded ${json.length} items`;
+                if (status) {
+                    status.className = 'status success';
+                    status.textContent = `✓ Loaded ${json.length} items`;
+                }
+                
                 updateSettingsUI();
+                updateDatabaseTab();
                 return;
             }
-        } catch {}
+        } catch (jsonErr) {
+            // Not JSON, try CSV
+            console.log('Not JSON, trying CSV');
+        }
         
-        // Try CSV
+        // Try CSV/TSV
         const result = await parseDatabase(text, name);
-        status.className = 'status success';
-        status.textContent = `✓ Loaded ${result.rows} items`;
+        
+        if (status) {
+            status.className = 'status success';
+            status.textContent = `✓ Loaded ${result.rows} items`;
+        }
+        
         updateSettingsUI();
-    } catch (e) {
-        console.error(e);
-        status.className = 'status error';
-        status.textContent = `❌ ${e.message}`;
+        updateDatabaseTab();
+        
+    } catch (err) {
+        console.error('URL load error:', err);
+        if (status) {
+            status.className = 'status error';
+            status.textContent = `❌ ${err.message}`;
+        }
     }
 }
 
 function updateSettingsUI() {
     const list = document.getElementById('db-list');
     const activeCard = document.getElementById('active-db-card');
-    const keys = Object.keys(AppState.databases);
+    const dbKeys = Object.keys(AppState.databases);
     
-    if (!keys.length) {
+    console.log('Updating settings UI, databases:', dbKeys.length);
+    
+    if (!list) return;
+    
+    if (dbKeys.length === 0) {
         list.innerHTML = '<p class="text-muted">No databases loaded</p>';
-        activeCard?.classList.add('hidden');
+        if (activeCard) activeCard.classList.add('hidden');
         return;
     }
     
-    list.innerHTML = keys.map(id => {
+    list.innerHTML = dbKeys.map(id => {
         const db = AppState.databases[id];
-        const active = id === AppState.activeDbId;
+        const isActive = id === AppState.activeDbId;
         return `
-            <div class="db-item ${active ? 'active' : ''}" data-id="${id}">
+            <div class="db-item ${isActive ? 'active' : ''}" data-id="${id}">
                 <div class="db-item-info">
                     <div class="db-item-name">${escapeHtml(db.name)}</div>
                     <div class="db-item-meta">${db.rows} items</div>
                 </div>
                 <div class="db-item-actions">
-                    ${active ? '<span style="color:var(--success)">✓</span>' : `<button class="btn btn-small btn-secondary activate-db" data-id="${id}">Use</button>`}
+                    ${isActive 
+                        ? '<span style="color:var(--success)">✓ Active</span>' 
+                        : `<button class="btn btn-small btn-secondary activate-db" data-id="${id}">Use</button>`
+                    }
                     <button class="btn btn-small btn-danger delete-db" data-id="${id}">×</button>
                 </div>
             </div>
         `;
     }).join('');
     
+    // Attach event listeners
     list.querySelectorAll('.activate-db').forEach(btn => {
-        btn.addEventListener('click', e => {
+        btn.addEventListener('click', (e) => {
             e.stopPropagation();
             AppState.activeDbId = btn.dataset.id;
             saveState();
             updateSettingsUI();
+            updateDatabaseTab();
             showToast('Database activated');
         });
     });
     
     list.querySelectorAll('.delete-db').forEach(btn => {
-        btn.addEventListener('click', e => {
+        btn.addEventListener('click', (e) => {
             e.stopPropagation();
             if (!confirm('Delete this database?')) return;
+            
             delete AppState.databases[btn.dataset.id];
+            
             if (AppState.activeDbId === btn.dataset.id) {
-                AppState.activeDbId = Object.keys(AppState.databases)[0] || null;
+                const remaining = Object.keys(AppState.databases);
+                AppState.activeDbId = remaining.length > 0 ? remaining[0] : null;
             }
+            
             saveState();
             updateSettingsUI();
-            showToast('Deleted');
+            updateDatabaseTab();
+            showToast('Database deleted');
         });
     });
     
+    // Update active database card
     if (AppState.activeDbId && AppState.databases[AppState.activeDbId]) {
         const db = AppState.databases[AppState.activeDbId];
         document.getElementById('active-db-name').textContent = db.name;
         document.getElementById('active-db-info').textContent = `${db.rows} items`;
-        activeCard?.classList.remove('hidden');
+        if (activeCard) activeCard.classList.remove('hidden');
     } else {
-        activeCard?.classList.add('hidden');
+        if (activeCard) activeCard.classList.add('hidden');
     }
 }
 
 function exportDatabase() {
-    if (!AppState.activeDbId) return;
+    if (!AppState.activeDbId || !AppState.databases[AppState.activeDbId]) {
+        showToast('No database to export');
+        return;
+    }
+    
     const db = AppState.databases[AppState.activeDbId];
-    const blob = new Blob([JSON.stringify(db.data, null, 2)], { type: 'application/json' });
+    const json = JSON.stringify(db.data, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
     const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
+    link.href = url;
     link.download = `${db.name}.json`;
     link.click();
-    URL.revokeObjectURL(link.href);
-    showToast('Exported');
+    
+    URL.revokeObjectURL(url);
+    showToast('Database exported');
 }
 
 // ========== UI UPDATE ==========
@@ -739,7 +1132,7 @@ function updateUI() {
     updateDatabaseTab();
 }
 
-// ========== UTILS ==========
+// ========== UTILITIES ==========
 function escapeHtml(text) {
     if (!text) return '';
     const div = document.createElement('div');
@@ -747,12 +1140,28 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-function showToast(msg, duration = 2500) {
+function showToast(message, duration = 2500) {
     const toast = document.getElementById('toast');
     if (!toast) return;
-    toast.textContent = msg;
+    
+    toast.textContent = message;
     toast.classList.remove('hidden');
-    setTimeout(() => toast.classList.add('hidden'), duration);
+    
+    setTimeout(() => {
+        toast.classList.add('hidden');
+    }, duration);
 }
 
-window.addEventListener('beforeunload', stopScanner);
+// Cleanup on page unload
+window.addEventListener('beforeunload', () => {
+    stopScanner();
+});
+
+// Also stop scanner when page becomes hidden (iOS)
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        stopScanner();
+    }
+});
+
+console.log('QR Generator Pro loaded');
