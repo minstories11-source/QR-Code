@@ -13,6 +13,7 @@ const AppState = {
     currentQR: null,
     currentDbQR: null,
     currentScan: null,
+     wakeLock: null,
     scanner: {
         stream: null,
         scanning: false,
@@ -654,8 +655,10 @@ function startScanLoop() {
     let lastChainPart = 0;
     let lastScannedData = '';
     let lastScanTime = 0;
+    let frameCount = 0;
     
     function tryDecode(imageData) {
+        // Try multiple methods
         let code = jsQR(imageData.data, imageData.width, imageData.height, {
             inversionAttempts: 'attemptBoth'
         });
@@ -666,43 +669,124 @@ function startScanLoop() {
         });
         if (code) return code;
         
+        code = jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: 'onlyInvert'
+        });
+        if (code) return code;
+        
         return null;
     }
     
+    function enhanceContrast(imageData, threshold) {
+        const data = imageData.data;
+        for (let i = 0; i < data.length; i += 4) {
+            const avg = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
+            const val = avg > threshold ? 255 : 0;
+            data[i] = val;
+            data[i + 1] = val;
+            data[i + 2] = val;
+        }
+        return imageData;
+    }
+    
+    function sharpen(ctx, width, height) {
+        const imageData = ctx.getImageData(0, 0, width, height);
+        const data = imageData.data;
+        const weights = [0, -1, 0, -1, 5, -1, 0, -1, 0];
+        const side = 3;
+        const halfSide = 1;
+        const output = ctx.createImageData(width, height);
+        const dst = output.data;
+        
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const dstOff = (y * width + x) * 4;
+                let r = 0, g = 0, b = 0;
+                
+                for (let cy = 0; cy < side; cy++) {
+                    for (let cx = 0; cx < side; cx++) {
+                        const scy = Math.min(height - 1, Math.max(0, y + cy - halfSide));
+                        const scx = Math.min(width - 1, Math.max(0, x + cx - halfSide));
+                        const srcOff = (scy * width + scx) * 4;
+                        const wt = weights[cy * side + cx];
+                        r += data[srcOff] * wt;
+                        g += data[srcOff + 1] * wt;
+                        b += data[srcOff + 2] * wt;
+                    }
+                }
+                
+                dst[dstOff] = Math.min(255, Math.max(0, r));
+                dst[dstOff + 1] = Math.min(255, Math.max(0, g));
+                dst[dstOff + 2] = Math.min(255, Math.max(0, b));
+                dst[dstOff + 3] = 255;
+            }
+        }
+        
+        return output;
+    }
+    
     function processFrame() {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
+        const width = video.videoWidth;
+        const height = video.videoHeight;
+        
+        canvas.width = width;
+        canvas.height = height;
         ctx.drawImage(video, 0, 0);
         
-        // Try full frame
-        let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        // Method 1: Standard scan
+        let imageData = ctx.getImageData(0, 0, width, height);
         let code = tryDecode(imageData);
         if (code) return code;
         
-        // Try center crop (helps with logos)
-        const cropSize = Math.min(canvas.width, canvas.height) * 0.9;
-        const cropX = (canvas.width - cropSize) / 2;
-        const cropY = (canvas.height - cropSize) / 2;
-        
-        imageData = ctx.getImageData(cropX, cropY, cropSize, cropSize);
+        // Method 2: Center region only (60% of frame)
+        const centerSize = Math.min(width, height) * 0.6;
+        const centerX = (width - centerSize) / 2;
+        const centerY = (height - centerSize) / 2;
+        imageData = ctx.getImageData(centerX, centerY, centerSize, centerSize);
         code = tryDecode(imageData);
         if (code) return code;
         
-        // Try with increased contrast
+        // Method 3: High contrast (threshold 128)
         ctx.drawImage(video, 0, 0);
-        imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        imageData = ctx.getImageData(0, 0, width, height);
+        enhanceContrast(imageData, 128);
+        code = tryDecode(imageData);
+        if (code) return code;
         
-        const data = imageData.data;
-        for (let i = 0; i < data.length; i += 4) {
-            const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-            const boosted = avg > 128 ? 255 : 0;
-            data[i] = boosted;
-            data[i + 1] = boosted;
-            data[i + 2] = boosted;
+        // Method 4: Different threshold (100)
+        ctx.drawImage(video, 0, 0);
+        imageData = ctx.getImageData(0, 0, width, height);
+        enhanceContrast(imageData, 100);
+        code = tryDecode(imageData);
+        if (code) return code;
+        
+        // Method 5: Different threshold (160)
+        ctx.drawImage(video, 0, 0);
+        imageData = ctx.getImageData(0, 0, width, height);
+        enhanceContrast(imageData, 160);
+        code = tryDecode(imageData);
+        if (code) return code;
+        
+        // Method 6: Sharpened image (every 3rd frame to save CPU)
+        if (frameCount % 3 === 0) {
+            ctx.drawImage(video, 0, 0);
+            imageData = sharpen(ctx, width, height);
+            code = tryDecode(imageData);
+            if (code) return code;
         }
         
-        code = tryDecode(imageData);
-        if (code) return code;
+        // Method 7: Scaled down (helps with very dense QR)
+        if (width > 640) {
+            const scale = 640 / width;
+            const newW = width * scale;
+            const newH = height * scale;
+            canvas.width = newW;
+            canvas.height = newH;
+            ctx.drawImage(video, 0, 0, newW, newH);
+            imageData = ctx.getImageData(0, 0, newW, newH);
+            code = tryDecode(imageData);
+            if (code) return code;
+        }
         
         return null;
     }
@@ -711,6 +795,8 @@ function startScanLoop() {
         if (!AppState.scanner.scanning) return;
         
         if (video.readyState >= 2 && video.videoWidth) {
+            frameCount++;
+            
             try {
                 const code = processFrame();
                 
@@ -740,6 +826,7 @@ function startScanLoop() {
     }
     scan();
 }
+
 
 function stopScanner() {
     AppState.scanner.scanning = false;
@@ -958,14 +1045,14 @@ function generateFromScan() {
 // ========================================
 
 const CHAIN_PREFIX = 'QRP:1:';
-let CHUNK_SIZE = 800; // Default
+let CHUNK_SIZE = 600; // Default
 
 async function startChainTransfer() {
     if (!AppState.activeDbId) {
         showToast('No database to transfer');
         return;
     }
-    
+    await requestWakeLock();
     // Get chunk size from selector (if exists)
     const chunkSelect = document.getElementById('chunk-size-select');
     if (chunkSelect) {
@@ -1029,7 +1116,7 @@ async function startChainTransfer() {
 function stopChainTransfer() {
     AppState.chain.sending = false;
     AppState.chain.paused = false;
-    
+    releaseWakeLock();
     if (AppState.chain.intervalId) {
         clearInterval(AppState.chain.intervalId);
         AppState.chain.intervalId = null;
@@ -1183,11 +1270,33 @@ function handleChainQR(data) {
 function showChainReceiveUI() {
     const ui = document.getElementById('chain-receive-ui');
     const normalResult = document.getElementById('scan-result');
-    
+    requestWakeLock();
     if (ui) ui.classList.remove('hidden');
     if (normalResult) normalResult.classList.add('hidden');
     
     updateChainReceiveProgress();
+}
+// ========== WAKE LOCK ==========
+async function requestWakeLock() {
+    try {
+        if ('wakeLock' in navigator) {
+            AppState.wakeLock = await navigator.wakeLock.request('screen');
+            console.log('Wake lock active');
+            
+            AppState.wakeLock.addEventListener('release', () => {
+                console.log('Wake lock released');
+            });
+        }
+    } catch (e) {
+        console.log('Wake lock failed:', e);
+    }
+}
+
+function releaseWakeLock() {
+    if (AppState.wakeLock) {
+        AppState.wakeLock.release();
+        AppState.wakeLock = null;
+    }
 }
 
 function updateChainReceiveProgress() {
@@ -1273,7 +1382,7 @@ function cancelChainReceive() {
 
 function hideChainReceiveUI() {
     AppState.chain.receiving = null;
-    
+    releaseWakeLock();
     const ui = document.getElementById('chain-receive-ui');
     if (ui) ui.classList.add('hidden');
 }
