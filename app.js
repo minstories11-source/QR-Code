@@ -1045,7 +1045,7 @@ function generateFromScan() {
 // ========================================
 
 const CHAIN_PREFIX = 'QRP:1:';
-let CHUNK_SIZE = 300; // Default
+let CHUNK_SIZE = 100; // Default
 
 async function startChainTransfer() {
     if (!AppState.activeDbId) {
