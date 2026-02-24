@@ -633,7 +633,6 @@ input[type="color"] {
         width: 100%;
     }
 }
-
 /* ========== CHAIN TRANSFER STYLES ========== */
 
 /* Progress bar container */
@@ -693,4 +692,29 @@ input[type="color"] {
 
 #chain-receive-ui.success {
     border-color: var(--success);
+}
+/* Modal */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 16px;
+}
+
+.modal.hidden {
+    display: none;
+}
+
+.modal-content {
+    max-width: 400px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
 }
