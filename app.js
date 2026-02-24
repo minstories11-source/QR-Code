@@ -958,12 +958,18 @@ function generateFromScan() {
 // ========================================
 
 const CHAIN_PREFIX = 'QRP:1:';
-const CHUNK_SIZE = 500;
+let CHUNK_SIZE = 800; // Default
 
 async function startChainTransfer() {
     if (!AppState.activeDbId) {
         showToast('No database to transfer');
         return;
+    }
+    
+    // Get chunk size from selector (if exists)
+    const chunkSelect = document.getElementById('chunk-size-select');
+    if (chunkSelect) {
+        CHUNK_SIZE = parseInt(chunkSelect.value) || 800;
     }
     
     const db = AppState.databases[AppState.activeDbId];
@@ -1011,13 +1017,14 @@ async function startChainTransfer() {
         updateChainDisplay();
         startChainAutoPlay();
         
-        showToast('Show these QRs to receiving phone');
+        showToast(`Showing ${chunks.length} QR codes`);
         
     } catch (e) {
         console.error('Chain generation error:', e);
         showToast('Error creating transfer');
     }
 }
+
 
 function stopChainTransfer() {
     AppState.chain.sending = false;
